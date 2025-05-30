@@ -1,0 +1,16 @@
+{
+    "version": "1.0.0",
+    "configurations": [
+        {
+            "name": "Remote Debug",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "remotePath": "/workspaces/New folder/backend",
+            "port": 2345,
+            "host": "127.0.0.1",
+            "showLog": true,
+            "trace": "verbose"
+        }
+    ]
+} 
