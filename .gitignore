@@ -24,6 +24,14 @@ go.work
 .env.*
 !.env.example
 
+# Docker secrets
+secrets/
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+
 # IDE specific files
 .idea/
 .vscode/
@@ -39,4 +47,4 @@ dist/
 
 # Debug files
 debug
-debug.test 
+debug.test  
