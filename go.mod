@@ -16,7 +16,7 @@ require (
 	golang.org/x/crypto v0.38.0
 	gorm.io/driver/postgres v1.4.6
 	gorm.io/driver/sqlite v1.5.5
-	gorm.io/gorm v1.30.0
+	gorm.io/gorm v1.25.7-0.20240204074919-46816ad31dde
 )
 
 require (
