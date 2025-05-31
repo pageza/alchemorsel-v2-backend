@@ -175,13 +175,19 @@ func (h *ProfileHandler) UpdateDietaryPreferences(c *gin.Context) {
 }
 
 func (h *ProfileHandler) GetAllergens(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	allergens, err := h.profileService.GetAllergens(userID.(uuid.UUID))
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	allergens, err := h.profileService.GetAllergens(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get allergens"})
 		return
@@ -191,9 +197,15 @@ func (h *ProfileHandler) GetAllergens(c *gin.Context) {
 }
 
 func (h *ProfileHandler) UpdateAllergens(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
@@ -203,7 +215,7 @@ func (h *ProfileHandler) UpdateAllergens(c *gin.Context) {
 		return
 	}
 
-	if err := h.profileService.UpdateAllergens(userID.(uuid.UUID), allergens); err != nil {
+	if err := h.profileService.UpdateAllergens(userID, allergens); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update allergens"})
 		return
 	}
