@@ -3,68 +3,62 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestNew(t *testing.T) {
-	// Set environment variables for testing
-	os.Setenv("SERVER_PORT", "8080")
+func TestLoadConfig(t *testing.T) {
+	// Set test environment variables
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_PORT", "5432")
-	os.Setenv("DB_USER", "testuser")
-	os.Setenv("DB_PASSWORD", "testpass")
-	os.Setenv("DB_NAME", "testdb")
+	os.Setenv("DB_USER", "postgres")
+	os.Setenv("DB_PASSWORD", "postgres")
+	os.Setenv("DB_NAME", "alchemorsel")
+	os.Setenv("DB_SSL_MODE", "disable")
+	os.Setenv("JWT_SECRET", "test-secret")
+	os.Setenv("REDIS_URL", "redis://localhost:6379")
 
-	// Create a new config
-	cfg := New()
+	cfg, err := LoadConfig()
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
 
-	// Verify that the config values match the environment variables
-	if cfg.ServerPort != "8080" {
-		t.Errorf("ServerPort = %v; want %v", cfg.ServerPort, "8080")
-	}
-	if cfg.DBHost != "localhost" {
-		t.Errorf("DBHost = %v; want %v", cfg.DBHost, "localhost")
-	}
-	if cfg.DBPort != "5432" {
-		t.Errorf("DBPort = %v; want %v", cfg.DBPort, "5432")
-	}
-	if cfg.DBUser != "testuser" {
-		t.Errorf("DBUser = %v; want %v", cfg.DBUser, "testuser")
-	}
-	if cfg.DBPassword != "testpass" {
-		t.Errorf("DBPassword = %v; want %v", cfg.DBPassword, "testpass")
-	}
-	if cfg.DBName != "testdb" {
-		t.Errorf("DBName = %v; want %v", cfg.DBName, "testdb")
-	}
+	// Test database configuration
+	assert.Equal(t, "localhost", cfg.DBHost)
+	assert.Equal(t, "5432", cfg.DBPort)
+	assert.Equal(t, "postgres", cfg.DBUser)
+	assert.Equal(t, "postgres", cfg.DBPassword)
+	assert.Equal(t, "alchemorsel", cfg.DBName)
+	assert.Equal(t, "disable", cfg.DBSSLMode)
 
-	// Clear environment variables to test default values
-	os.Unsetenv("SERVER_PORT")
+	// Test JWT configuration
+	assert.Equal(t, "test-secret", cfg.JWTSecret)
+
+	// Test Redis configuration
+	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
+}
+
+func TestLoadConfigWithDefaults(t *testing.T) {
+	// Clear environment variables to test defaults
 	os.Unsetenv("DB_HOST")
 	os.Unsetenv("DB_PORT")
 	os.Unsetenv("DB_USER")
 	os.Unsetenv("DB_PASSWORD")
 	os.Unsetenv("DB_NAME")
+	os.Unsetenv("DB_SSL_MODE")
+	os.Unsetenv("JWT_SECRET")
+	os.Unsetenv("REDIS_URL")
 
-	// Create a new config with default values
-	cfg = New()
+	cfg, err := LoadConfig()
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
 
-	// Verify that the config values match the default values
-	if cfg.ServerPort != "8080" {
-		t.Errorf("ServerPort = %v; want %v", cfg.ServerPort, "8080")
-	}
-	if cfg.DBHost != "localhost" {
-		t.Errorf("DBHost = %v; want %v", cfg.DBHost, "localhost")
-	}
-	if cfg.DBPort != "5432" {
-		t.Errorf("DBPort = %v; want %v", cfg.DBPort, "5432")
-	}
-	if cfg.DBUser != "" {
-		t.Errorf("DBUser = %v; want %v", cfg.DBUser, "")
-	}
-	if cfg.DBPassword != "" {
-		t.Errorf("DBPassword = %v; want %v", cfg.DBPassword, "")
-	}
-	if cfg.DBName != "" {
-		t.Errorf("DBName = %v; want %v", cfg.DBName, "")
-	}
+	// Test default values
+	assert.Equal(t, "localhost", cfg.DBHost)
+	assert.Equal(t, "5432", cfg.DBPort)
+	assert.Equal(t, "postgres", cfg.DBUser)
+	assert.Equal(t, "postgres", cfg.DBPassword)
+	assert.Equal(t, "alchemorsel", cfg.DBName)
+	assert.Equal(t, "disable", cfg.DBSSLMode)
+	assert.Equal(t, "your-secret-key", cfg.JWTSecret)
+	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
 }

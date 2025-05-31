@@ -1,42 +1,34 @@
 package server
 
 import (
-	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/pageza/alchemorsel-v2/backend/config"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNew(t *testing.T) {
-	// Use port 0 to let the OS assign an available port
+	// Create test configuration
 	cfg := &config.Config{
-		ServerPort: "0",
+		DBHost:     "localhost",
+		DBPort:     "5432",
+		DBUser:     "postgres",
+		DBPassword: "postgres",
+		DBName:     "alchemorsel_test",
+		DBSSLMode:  "disable",
+		JWTSecret:  "test-secret",
 	}
 
-	// Create a new server
+	// Create server
 	srv := New(cfg)
+	assert.NotNil(t, srv)
 
-	// The actual port will be assigned by the OS, so we just check that the address is set
-	if srv.http.Addr != ":0" {
-		t.Errorf("Server address = %v; want %v", srv.http.Addr, ":0")
-	}
+	// Test health check endpoint
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/health", nil)
+	srv.router.ServeHTTP(w, req)
 
-	// Start the server in a goroutine
-	go func() {
-		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
-			t.Errorf("Server failed to start: %v", err)
-		}
-	}()
-
-	// Wait for the server to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Shutdown the server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		t.Errorf("Server failed to shutdown: %v", err)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
