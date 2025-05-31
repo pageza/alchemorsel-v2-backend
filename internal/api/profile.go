@@ -56,13 +56,19 @@ func (h *ProfileHandler) RegisterRoutes(router *gin.RouterGroup) {
 }
 
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	profile, err := h.profileService.GetProfile(userID.(uuid.UUID))
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	profile, err := h.profileService.GetProfile(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get profile"})
 		return
@@ -72,9 +78,15 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 }
 
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
@@ -84,7 +96,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if err := h.profileService.UpdateProfile(userID.(uuid.UUID), updates); err != nil {
+	if err := h.profileService.UpdateProfile(userID, updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
 		return
 	}
@@ -93,13 +105,19 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 }
 
 func (h *ProfileHandler) Logout(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	if err := h.profileService.Logout(userID.(uuid.UUID)); err != nil {
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	if err := h.profileService.Logout(userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to logout"})
 		return
 	}
@@ -108,13 +126,19 @@ func (h *ProfileHandler) Logout(c *gin.Context) {
 }
 
 func (h *ProfileHandler) GetDietaryPreferences(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	preferences, err := h.profileService.GetDietaryPreferences(userID.(uuid.UUID))
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	preferences, err := h.profileService.GetDietaryPreferences(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get dietary preferences"})
 		return
@@ -124,9 +148,15 @@ func (h *ProfileHandler) GetDietaryPreferences(c *gin.Context) {
 }
 
 func (h *ProfileHandler) UpdateDietaryPreferences(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
@@ -136,7 +166,7 @@ func (h *ProfileHandler) UpdateDietaryPreferences(c *gin.Context) {
 		return
 	}
 
-	if err := h.profileService.UpdateDietaryPreferences(userID.(uuid.UUID), preferences); err != nil {
+	if err := h.profileService.UpdateDietaryPreferences(userID, preferences); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update dietary preferences"})
 		return
 	}
