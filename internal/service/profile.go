@@ -123,6 +123,78 @@ func (s *ProfileService) UpdateProfile(userID uuid.UUID, updates map[string]inte
 	return s.db.Model(&models.UserProfile{}).Where("user_id = ?", userID).Updates(updates).Error
 }
 
+func (s *ProfileService) GetDietaryPreferences(userID uuid.UUID) ([]models.DietaryPreference, error) {
+	var preferences []models.DietaryPreference
+	if err := s.db.Where("user_id = ?", userID).Find(&preferences).Error; err != nil {
+		return nil, err
+	}
+	return preferences, nil
+}
+
+func (s *ProfileService) UpdateDietaryPreferences(userID uuid.UUID, preferences []models.DietaryPreference) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.DietaryPreference{}).Error; err != nil {
+			return err
+		}
+		
+		for _, pref := range preferences {
+			pref.UserID = userID
+			if err := tx.Create(&pref).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *ProfileService) GetAllergens(userID uuid.UUID) ([]models.Allergen, error) {
+	var allergens []models.Allergen
+	if err := s.db.Where("user_id = ?", userID).Find(&allergens).Error; err != nil {
+		return nil, err
+	}
+	return allergens, nil
+}
+
+func (s *ProfileService) UpdateAllergens(userID uuid.UUID, allergens []models.Allergen) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.Allergen{}).Error; err != nil {
+			return err
+		}
+		
+		for _, allergen := range allergens {
+			allergen.UserID = userID
+			if err := tx.Create(&allergen).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *ProfileService) GetAppliances(userID uuid.UUID) ([]models.UserAppliance, error) {
+	var appliances []models.UserAppliance
+	if err := s.db.Where("user_id = ?", userID).Find(&appliances).Error; err != nil {
+		return nil, err
+	}
+	return appliances, nil
+}
+
+func (s *ProfileService) UpdateAppliances(userID uuid.UUID, appliances []models.UserAppliance) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserAppliance{}).Error; err != nil {
+			return err
+		}
+		
+		for _, appliance := range appliances {
+			appliance.UserID = userID
+			if err := tx.Create(&appliance).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *ProfileService) Logout(userID uuid.UUID) error {
 	// In a real application, you might want to invalidate the user's session or token
 	// For now, we'll just return nil as the token invalidation is handled by the client

@@ -8,6 +8,7 @@ import (
 
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -19,21 +20,25 @@ type DB struct {
 
 // New creates a new database connection
 func New(cfg *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
-	)
-
-	// Log connection string (without password)
-	log.Printf("Connecting to database at %s:%s as user %s", cfg.DBHost, cfg.DBPort, cfg.DBUser)
-
 	// Configure GORM
 	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	}
 
-	// Open connection
-	db, err := gorm.Open(postgres.Open(dsn), gormConfig)
+	var db *gorm.DB
+	var err error
+
+	if cfg.DBHost == "localhost" && cfg.DBPort == "5432" {
+		log.Printf("Using SQLite for local development")
+		db, err = gorm.Open(sqlite.Open("alchemorsel_dev.db"), gormConfig)
+	} else {
+		dsn := fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+		)
+		log.Printf("Connecting to PostgreSQL at %s:%s as user %s", cfg.DBHost, cfg.DBPort, cfg.DBUser)
+		db, err = gorm.Open(postgres.Open(dsn), gormConfig)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}

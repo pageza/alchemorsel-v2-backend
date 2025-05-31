@@ -34,34 +34,34 @@ type Config struct {
 	RedisURL string
 }
 
-// New creates a new Config instance with values from environment variables
+// New creates a new Config instance with values from environment variables and Docker secrets
 func New() *Config {
-	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
+	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
 
 	return &Config{
 		// Server configuration
-		ServerPort: getEnv("SERVER_PORT", "8080"),
-		ServerHost: getEnv("SERVER_HOST", "0.0.0.0"),
+		ServerPort: getEnvOrDefault("SERVER_PORT", "8080"),
+		ServerHost: getEnvOrDefault("SERVER_HOST", "0.0.0.0"),
 
 		// Database configuration
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "postgres"),
-		DBPassword: getEnv("DB_PASSWORD", "postgres"),
-		DBName:     getEnv("DB_NAME", "alchemorsel"),
-		DBSSLMode:  getEnv("DB_SSL_MODE", "disable"),
+		DBHost:     getEnvOrDefault("DB_HOST", "localhost"),
+		DBPort:     getEnvOrDefault("DB_PORT", "5432"),
+		DBUser:     getEnvOrDefault("DB_USER", "postgres"),
+		DBPassword: getEnvOrSecret("DB_PASSWORD", "db_password"),
+		DBName:     getEnvOrDefault("DB_NAME", "alchemorsel"),
+		DBSSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
 
 		// Redis configuration
-		RedisHost:     getEnv("REDIS_HOST", "localhost"),
-		RedisPort:     getEnv("REDIS_PORT", "6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisHost:     getEnvOrDefault("REDIS_HOST", "localhost"),
+		RedisPort:     getEnvOrDefault("REDIS_PORT", "6379"),
+		RedisPassword: getEnvOrSecret("REDIS_PASSWORD", "redis_password"),
 		RedisDB:       redisDB,
 
 		// JWT configuration
-		JWTSecret: getEnv("JWT_SECRET", "your-secret-key"),
+		JWTSecret: getEnvOrSecret("JWT_SECRET", "jwt_secret"),
 
 		// New fields
-		RedisURL: getEnv("REDIS_URL", "redis://localhost:6379"),
+		RedisURL: getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
 	}
 }
 

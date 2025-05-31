@@ -8,11 +8,23 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"gorm.io/gorm"
 )
 
 // RunMigrations executes all SQL migration files in the migrations directory
 func RunMigrations(db *gorm.DB, migrationsDir string) error {
+	if db.Dialector.Name() == "sqlite" {
+		log.Printf("Using GORM auto-migration for SQLite")
+		return db.AutoMigrate(
+			&models.User{},
+			&models.UserProfile{},
+			&models.DietaryPreference{},
+			&models.Allergen{},
+			&models.UserAppliance{},
+		)
+	}
+
 	// Get all migration files
 	files, err := ioutil.ReadDir(migrationsDir)
 	if err != nil {
@@ -24,7 +36,7 @@ func RunMigrations(db *gorm.DB, migrationsDir string) error {
 		return files[i].Name() < files[j].Name()
 	})
 
-	// Create migrations table if it doesn't exist
+	// Create migrations table if it doesn't exist (PostgreSQL)
 	if err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS migrations (
 			id SERIAL PRIMARY KEY,
