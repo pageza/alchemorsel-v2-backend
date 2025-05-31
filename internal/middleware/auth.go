@@ -12,7 +12,7 @@ type TokenValidator interface {
 }
 
 type TokenClaims struct {
-	UserID   uint
+	UserID   string
 	Username string
 }
 
@@ -44,7 +44,7 @@ func AuthMiddleware(validator TokenValidator) gin.HandlerFunc {
 		}
 
 		// Set user info in context
-		c.Set("userID", claims.UserID)
+		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
 		c.Next()
 	}

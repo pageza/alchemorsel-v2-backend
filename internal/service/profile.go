@@ -58,7 +58,7 @@ func (s *ProfileService) GenerateToken(userID, username string) (string, error) 
 func (s *ProfileService) ValidateToken(token string) (*middleware.TokenClaims, error) {
 	// TODO: Implement token validation
 	return &middleware.TokenClaims{
-		UserID:   1,
+		UserID:   "1",
 		Username: "testuser",
 	}, nil
 }
