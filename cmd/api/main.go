@@ -5,46 +5,57 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/pageza/alchemorsel-v2/backend/config"
+	"github.com/pageza/alchemorsel-v2/backend/internal/database"
 	"github.com/pageza/alchemorsel-v2/backend/internal/server"
 )
 
 func main() {
-	// Initialize configuration
-	cfg := config.New()
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	// Create and start server
-	srv := server.New(cfg)
+	// Initialize database
+	db, err := database.New(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
 
-	// Channel to listen for errors coming from the server
-	errChan := make(chan error, 1)
+	// Run migrations
+	migrationsDir := filepath.Join("migrations")
+	if err := database.RunMigrations(db, migrationsDir); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Create server
+	srv := server.New(cfg, db)
 
 	// Start server in a goroutine
 	go func() {
-		log.Println("Starting server...")
-		errChan <- srv.Start()
+		if err := srv.Start(cfg); err != nil {
+			log.Fatalf("Failed to start server: %v", err)
+		}
 	}()
 
-	// Channel to listen for an interrupt or terminate signal from the OS
+	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	// Block until we receive a signal or error
-	select {
-	case err := <-errChan:
-		if err != nil {
-			log.Fatalf("Server error: %v", err)
-		}
-	case sig := <-quit:
-		log.Printf("Received signal: %v", sig)
+	// Create a deadline to wait for
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Attempt graceful shutdown
+	if err := srv.Stop(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	// Gracefully shutdown the server
-	log.Println("Shutting down server...")
-	if err := srv.Shutdown(context.Background()); err != nil {
-		log.Fatalf("Server shutdown error: %v", err)
-	}
-	log.Println("Server stopped")
+	log.Println("Server exiting")
 }

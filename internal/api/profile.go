@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
@@ -16,9 +17,9 @@ type Profile struct {
 }
 
 type ProfileService interface {
-	GetProfile(userID uint) (*models.Profile, error)
-	UpdateProfile(userID uint, profile *models.Profile) error
-	GetProfileHistory(userID uint) ([]map[string]interface{}, error)
+	GetProfile(userID uuid.UUID) (*models.UserProfile, error)
+	UpdateProfile(userID uuid.UUID, updates map[string]interface{}) error
+	Logout(userID uuid.UUID) error
 	ValidateToken(token string) (*middleware.TokenClaims, error)
 }
 
@@ -32,14 +33,24 @@ func NewProfileHandler(profileService ProfileService) *ProfileHandler {
 	}
 }
 
+func (h *ProfileHandler) RegisterRoutes(router *gin.RouterGroup) {
+	profile := router.Group("/profile")
+	profile.Use(middleware.AuthMiddleware(h.profileService))
+	{
+		profile.GET("", h.GetProfile)
+		profile.PUT("", h.UpdateProfile)
+		profile.POST("/logout", h.Logout)
+	}
+}
+
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
-	userID := c.GetUint("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	profile, err := h.profileService.GetProfile(userID)
+	profile, err := h.profileService.GetProfile(userID.(uuid.UUID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get profile"})
 		return
@@ -49,41 +60,39 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 }
 
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
-	userID := c.GetUint("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	var profile models.Profile
-	if err := c.ShouldBindJSON(&profile); err != nil {
+	var updates map[string]interface{}
+	if err := c.ShouldBindJSON(&updates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	profile.UserID = userID
-	if err := h.profileService.UpdateProfile(userID, &profile); err != nil {
+	if err := h.profileService.UpdateProfile(userID.(uuid.UUID), updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Profile updated successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "profile updated successfully"})
 }
 
-func (h *ProfileHandler) GetProfileHistory(c *gin.Context) {
-	userID := c.GetUint("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+func (h *ProfileHandler) Logout(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	history, err := h.profileService.GetProfileHistory(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get profile history"})
+	if err := h.profileService.Logout(userID.(uuid.UUID)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to logout"})
 		return
 	}
 
-	c.JSON(http.StatusOK, history)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
 }
 
 // RegisterProfileRoutes registers the profile API routes
@@ -95,6 +104,5 @@ func RegisterProfileRoutes(router *gin.Engine, profileService ProfileService) {
 	{
 		profile.GET("", handler.GetProfile)
 		profile.PUT("", handler.UpdateProfile)
-		profile.GET("/history", handler.GetProfileHistory)
 	}
 }

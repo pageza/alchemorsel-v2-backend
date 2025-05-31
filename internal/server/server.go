@@ -2,62 +2,88 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/api"
-	"github.com/pageza/alchemorsel-v2/backend/internal/database"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 // Server represents the HTTP server
 type Server struct {
-	config *config.Config
-	http   *http.Server
-	db     *database.DB
 	router *gin.Engine
+	http   *http.Server
+	db     *gorm.DB
+	logger *log.Logger
 }
 
 // New creates a new Server instance
-func New(cfg *config.Config) *Server {
-	router := gin.Default()
-	srv := &Server{
+func New(cfg *config.Config, db *gorm.DB) *Server {
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(gin.Logger())
+
+	// Add CORS middleware
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	return &Server{
 		router: router,
-		config: cfg,
+		db:     db,
+		logger: log.New(log.Writer(), "[SERVER] ", log.LstdFlags),
 	}
-
-	// Initialize database
-	db, err := database.New(cfg)
-	if err != nil {
-		panic(err)
-	}
-
-	// Initialize services
-	profileService := service.NewProfileService(db.GormDB, cfg.JWTSecret)
-
-	// Register routes
-	api.RegisterProfileRoutes(router, profileService)
-
-	// Health check endpoint
-	router.GET("/api/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	return srv
 }
 
 // Start starts the HTTP server
-func (s *Server) Start() error {
-	log.Printf("Starting server on port %s", s.config.ServerPort)
+func (s *Server) Start(cfg *config.Config) error {
+	// Initialize services
+	profileService := service.NewProfileService(s.db, cfg.JWTSecret)
+	authService := service.NewAuthService(s.db, cfg.JWTSecret)
+
+	// Register routes
+	profileHandler := api.NewProfileHandler(profileService)
+	authHandler := api.NewAuthHandler(authService)
+
+	apiGroup := s.router.Group("/api/v1")
+	profileHandler.RegisterRoutes(apiGroup)
+	authHandler.RegisterRoutes(apiGroup)
+
+	// Add health check endpoint
+	s.router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+		})
+	})
+
+	// Create HTTP server
+	s.http = &http.Server{
+		Addr:    fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
+		Handler: s.router,
+	}
+
+	// Start server
+	s.logger.Printf("Starting server on port %s", cfg.ServerPort)
 	return s.http.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server
-func (s *Server) Shutdown(ctx context.Context) error {
-	if s.db != nil {
-		s.db.Close()
+// Stop gracefully stops the HTTP server
+func (s *Server) Stop(ctx context.Context) error {
+	if s.http != nil {
+		return s.http.Shutdown(ctx)
 	}
-	return s.http.Shutdown(ctx)
+	return nil
 }

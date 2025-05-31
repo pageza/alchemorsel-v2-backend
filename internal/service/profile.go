@@ -7,6 +7,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 
+	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
@@ -100,16 +101,30 @@ func (s *ProfileService) GetProfileHistory(userID uint) ([]map[string]interface{
 	return []map[string]interface{}{}, nil
 }
 
-// UpdateProfile updates a user's profile and records the changes
-func (s *ProfileService) UpdateProfile(userID uint, profile *models.Profile) error {
-	profile.UserID = userID
-	return s.db.Save(profile).Error
-}
-
-func (s *ProfileService) GetProfile(userID uint) (*models.Profile, error) {
-	var profile models.Profile
+func (s *ProfileService) GetProfile(userID uuid.UUID) (*models.UserProfile, error) {
+	var profile models.UserProfile
 	if err := s.db.Where("user_id = ?", userID).First(&profile).Error; err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Create a new profile if it doesn't exist
+			profile = models.UserProfile{
+				UserID: userID,
+			}
+			if err := s.db.Create(&profile).Error; err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 	return &profile, nil
+}
+
+func (s *ProfileService) UpdateProfile(userID uuid.UUID, updates map[string]interface{}) error {
+	return s.db.Model(&models.UserProfile{}).Where("user_id = ?", userID).Updates(updates).Error
+}
+
+func (s *ProfileService) Logout(userID uuid.UUID) error {
+	// In a real application, you might want to invalidate the user's session or token
+	// For now, we'll just return nil as the token invalidation is handled by the client
+	return nil
 }

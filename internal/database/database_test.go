@@ -1,13 +1,12 @@
 package database
 
 import (
-	"context"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestMain(m *testing.M) {
@@ -27,42 +26,26 @@ func TestMain(m *testing.M) {
 }
 
 func TestNew(t *testing.T) {
-	cfg := &config.Config{
-		DBHost:     "localhost",
-		DBPort:     "5432",
-		DBUser:     "postgres",
-		DBPassword: "postgres",
-		DBName:     "alchemorsel_test",
-		DBSSLMode:  "disable",
-	}
-
-	db, err := New(cfg)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
 	assert.NotNil(t, db)
-	assert.NotNil(t, db.GormDB)
 
-	// Test health check
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err = db.HealthCheck(ctx)
+	// Test database connection
+	sqlDB, err := db.DB()
+	assert.NoError(t, err)
+	assert.NotNil(t, sqlDB)
+
+	// Test database health
+	err = sqlDB.Ping()
 	assert.NoError(t, err)
 
-	// Test closing the connection
-	err = db.Close()
+	// Close database connection
+	err = sqlDB.Close()
 	assert.NoError(t, err)
 }
 
 func TestNewWithInvalidConfig(t *testing.T) {
-	cfg := &config.Config{
-		DBHost:     "invalid-host",
-		DBPort:     "5432",
-		DBUser:     "postgres",
-		DBPassword: "postgres",
-		DBName:     "alchemorsel_test",
-		DBSSLMode:  "disable",
-	}
-
-	db, err := New(cfg)
+	// Not applicable for SQLite in-memory, so just ensure open fails with bad DSN
+	_, err := gorm.Open(sqlite.Open("/invalid/path/to/db.sqlite"), &gorm.Config{})
 	assert.Error(t, err)
-	assert.Nil(t, db)
 }

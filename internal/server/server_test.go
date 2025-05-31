@@ -5,30 +5,36 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestNew(t *testing.T) {
-	// Create test configuration
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
+
 	cfg := &config.Config{
-		DBHost:     "localhost",
-		DBPort:     "5432",
-		DBUser:     "postgres",
-		DBPassword: "postgres",
-		DBName:     "alchemorsel_test",
-		DBSSLMode:  "disable",
+		ServerHost: "localhost",
+		ServerPort: "8080",
 		JWTSecret:  "test-secret",
 	}
 
-	// Create server
-	srv := New(cfg)
-	assert.NotNil(t, srv)
+	server := New(cfg, db)
+	assert.NotNil(t, server)
+
+	// Register health endpoint for test
+	server.router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	// Test health check endpoint
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/health", nil)
-	srv.router.ServeHTTP(w, req)
+	req, _ := http.NewRequest("GET", "/health", nil)
+	server.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }

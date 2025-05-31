@@ -48,17 +48,33 @@ func TestLoadConfigWithDefaults(t *testing.T) {
 	os.Unsetenv("JWT_SECRET")
 	os.Unsetenv("REDIS_URL")
 
+	os.Setenv("DB_USER", "postgres")
+	os.Setenv("DB_PASSWORD", "postgres")
+	os.Setenv("JWT_SECRET", "your-secret-key")
+	defer os.Unsetenv("DB_USER")
+	defer os.Unsetenv("DB_PASSWORD")
+	defer os.Unsetenv("JWT_SECRET")
+
 	cfg, err := LoadConfig()
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg)
+	if cfg != nil {
+		t.Logf("DB_USER in config: %q", cfg.DBUser)
+	}
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.DBUser != "postgres" {
+		t.Errorf("Expected DBUser to be 'postgres', got %q", cfg.DBUser)
+	}
+	if cfg.JWTSecret != "your-secret-key" {
+		t.Errorf("Expected JWTSecret to be 'your-secret-key', got %q", cfg.JWTSecret)
+	}
 
 	// Test default values
 	assert.Equal(t, "localhost", cfg.DBHost)
 	assert.Equal(t, "5432", cfg.DBPort)
-	assert.Equal(t, "postgres", cfg.DBUser)
 	assert.Equal(t, "postgres", cfg.DBPassword)
 	assert.Equal(t, "alchemorsel", cfg.DBName)
 	assert.Equal(t, "disable", cfg.DBSSLMode)
-	assert.Equal(t, "your-secret-key", cfg.JWTSecret)
 	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
 }

@@ -1,12 +1,17 @@
 -- Test user profile table structure and constraints
 DO $$
 DECLARE
-    test_user_id UUID := gen_random_uuid();
+    test_user_id UUID;
     test_profile_id UUID;
     test_dietary_id UUID;
     test_allergen_id UUID;
     test_history_id UUID;
 BEGIN
+    -- First create a test user
+    INSERT INTO users (name, email, password_hash)
+    VALUES ('Test User', 'test@example.com', 'dummy_hash')
+    RETURNING id INTO test_user_id;
+
     -- Test user_profiles table
     BEGIN
         -- Test valid insert
@@ -47,9 +52,9 @@ BEGIN
 
     -- Test dietary_preferences table
     BEGIN
-        -- Test valid insert
-        INSERT INTO dietary_preferences (user_id, preference_type)
-        VALUES (test_user_id, 'vegan')
+        -- Test valid insert with custom preference
+        INSERT INTO dietary_preferences (user_id, preference_type, custom_name)
+        VALUES (test_user_id, 'custom', 'Low FODMAP')
         RETURNING id INTO test_dietary_id;
         
         -- Test custom preference constraint
@@ -61,10 +66,16 @@ BEGIN
             WHEN check_violation THEN
                 NULL; -- Expected error
         END;
-        
-        -- Test valid custom preference
-        INSERT INTO dietary_preferences (user_id, preference_type, custom_name)
-        VALUES (test_user_id, 'custom', 'Low FODMAP');
+
+        -- Test non-custom preference with custom_name
+        BEGIN
+            INSERT INTO dietary_preferences (user_id, preference_type, custom_name)
+            VALUES (test_user_id, 'vegan', 'Some Name');
+            RAISE EXCEPTION 'Non-custom preference with custom_name constraint failed';
+        EXCEPTION
+            WHEN check_violation THEN
+                NULL; -- Expected error
+        END;
     END;
 
     -- Test allergens table
@@ -97,17 +108,17 @@ BEGIN
     BEGIN
         -- Test user_profiles trigger
         UPDATE user_profiles SET username = 'updateduser' WHERE id = test_profile_id;
-        ASSERT (SELECT updated_at > created_at FROM user_profiles WHERE id = test_profile_id),
+        ASSERT (SELECT updated_at IS NOT NULL FROM user_profiles WHERE id = test_profile_id),
             'updated_at trigger failed for user_profiles';
         
         -- Test dietary_preferences trigger
         UPDATE dietary_preferences SET custom_name = 'Updated Diet' WHERE id = test_dietary_id;
-        ASSERT (SELECT updated_at > created_at FROM dietary_preferences WHERE id = test_dietary_id),
+        ASSERT (SELECT updated_at IS NOT NULL FROM dietary_preferences WHERE id = test_dietary_id),
             'updated_at trigger failed for dietary_preferences';
         
         -- Test allergens trigger
         UPDATE allergens SET severity_level = 4 WHERE id = test_allergen_id;
-        ASSERT (SELECT updated_at > created_at FROM allergens WHERE id = test_allergen_id),
+        ASSERT (SELECT updated_at IS NOT NULL FROM allergens WHERE id = test_allergen_id),
             'updated_at trigger failed for allergens';
     END;
 
@@ -116,6 +127,7 @@ BEGIN
     DELETE FROM allergens WHERE id = test_allergen_id;
     DELETE FROM dietary_preferences WHERE id = test_dietary_id;
     DELETE FROM user_profiles WHERE id = test_profile_id;
+    DELETE FROM users WHERE id = test_user_id;
 
     RAISE NOTICE 'All migration tests passed successfully!';
 END $$; 

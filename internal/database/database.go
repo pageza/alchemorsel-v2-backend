@@ -18,7 +18,7 @@ type DB struct {
 }
 
 // New creates a new database connection
-func New(cfg *config.Config) (*DB, error) {
+func New(cfg *config.Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
@@ -35,7 +35,7 @@ func New(cfg *config.Config) (*DB, error) {
 	// Open connection
 	db, err := gorm.Open(postgres.Open(dsn), gormConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error opening database: %v", err)
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	// Get underlying *sql.DB
@@ -55,7 +55,7 @@ func New(cfg *config.Config) (*DB, error) {
 	}
 
 	log.Printf("Successfully connected to database")
-	return &DB{GormDB: db}, nil
+	return db, nil
 }
 
 // HealthCheck checks if the database is accessible

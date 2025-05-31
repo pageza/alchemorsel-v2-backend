@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // Config holds all configuration for the application
@@ -85,20 +86,22 @@ func getEnvOrSecret(envKey, secretName string) string {
 func readSecret(name string) string {
 	secretPath := filepath.Join("/run/secrets", name)
 	if data, err := os.ReadFile(secretPath); err == nil {
-		return string(data)
+		return strings.TrimSpace(string(data))
 	}
 	return ""
 }
 
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
+		ServerPort: getEnvOrDefault("SERVER_PORT", "8080"),
+		ServerHost: getEnvOrDefault("SERVER_HOST", "0.0.0.0"),
 		DBHost:     getEnvOrDefault("DB_HOST", "localhost"),
 		DBPort:     getEnvOrDefault("DB_PORT", "5432"),
 		DBUser:     getEnvOrDefault("DB_USER", "postgres"),
-		DBPassword: getEnvOrDefault("DB_PASSWORD", "postgres"),
+		DBPassword: getEnvOrSecret("DB_PASSWORD", "db_password"),
 		DBName:     getEnvOrDefault("DB_NAME", "alchemorsel"),
 		DBSSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
-		JWTSecret:  getEnvOrDefault("JWT_SECRET", "your-secret-key"),
+		JWTSecret:  getEnvOrSecret("JWT_SECRET", "jwt_secret"),
 		RedisURL:   getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
 	}
 	return cfg, nil
