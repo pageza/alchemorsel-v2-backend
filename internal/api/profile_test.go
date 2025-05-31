@@ -6,71 +6,106 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
-func TestGetProfileHandler(t *testing.T) {
-	req, err := http.NewRequest("GET", "/api/user/profile", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+type MockProfileService struct {
+	mock.Mock
+}
 
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(GetProfileHandler)
+func (m *MockProfileService) GetProfile(userID uint) (*models.Profile, error) {
+	args := m.Called(userID)
+	return args.Get(0).(*models.Profile), args.Error(1)
+}
 
-	handler.ServeHTTP(rr, req)
+func (m *MockProfileService) UpdateProfile(userID uint, profile *models.Profile) error {
+	args := m.Called(userID, profile)
+	return args.Error(0)
+}
 
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-	}
+func (m *MockProfileService) GetProfileHistory(userID uint) ([]map[string]interface{}, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]map[string]interface{}), args.Error(1)
+}
 
-	var response Profile
-	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-		t.Fatal(err)
-	}
+func (m *MockProfileService) ValidateToken(token string) (*middleware.TokenClaims, error) {
+	args := m.Called(token)
+	return args.Get(0).(*middleware.TokenClaims), args.Error(1)
+}
 
-	expected := Profile{
-		ID:       "1",
+func TestGetProfile(t *testing.T) {
+	// Setup
+	gin.SetMode(gin.TestMode)
+	mockService := new(MockProfileService)
+	handler := NewProfileHandler(mockService)
+
+	// Mock data
+	expectedProfile := &models.Profile{
+		UserID:   1,
 		Username: "testuser",
 		Email:    "test@example.com",
 	}
 
-	if response != expected {
-		t.Errorf("handler returned unexpected body: got %v want %v", response, expected)
-	}
+	// Setup mock expectations
+	mockService.On("GetProfile", uint(1)).Return(expectedProfile, nil)
+
+	// Create test request
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Set("userID", uint(1))
+
+	// Call handler
+	handler.GetProfile(c)
+
+	// Assertions
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "testuser", response["username"])
+	assert.Equal(t, "test@example.com", response["email"])
+
+	mockService.AssertExpectations(t)
 }
 
-func TestUpdateProfileHandler(t *testing.T) {
-	profile := Profile{
-		ID:       "1",
-		Username: "updateduser",
-		Email:    "updated@example.com",
-	}
-	jsonData, err := json.Marshal(profile)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestUpdateProfile(t *testing.T) {
+	// Setup
+	gin.SetMode(gin.TestMode)
+	mockService := new(MockProfileService)
+	handler := NewProfileHandler(mockService)
 
-	req, err := http.NewRequest("PUT", "/api/user/profile", bytes.NewBuffer(jsonData))
-	if err != nil {
-		t.Fatal(err)
+	// Mock data
+	updateData := map[string]interface{}{
+		"username": "updateduser",
+		"email":    "updated@example.com",
 	}
-	req.Header.Set("Content-Type", "application/json")
+	requestBody, _ := json.Marshal(updateData)
 
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(UpdateProfileHandler)
+	// Setup mock expectations
+	mockService.On("UpdateProfile", uint(1), mock.AnythingOfType("*models.Profile")).Return(nil)
 
-	handler.ServeHTTP(rr, req)
+	// Create test request
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Set("userID", uint(1))
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/profile", bytes.NewBuffer(requestBody))
 
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-	}
+	// Call handler
+	handler.UpdateProfile(c)
 
-	var response map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-		t.Fatal(err)
-	}
+	// Assertions
+	assert.Equal(t, http.StatusOK, w.Code)
 
-	if response["status"] != "success" {
-		t.Errorf("handler returned unexpected body: got %v want %v", response, map[string]string{"status": "success"})
-	}
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Profile updated successfully", response["message"])
+
+	mockService.AssertExpectations(t)
 }

@@ -2,16 +2,14 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/api"
 	"github.com/pageza/alchemorsel-v2/backend/internal/database"
-	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 // Server represents the HTTP server
@@ -19,60 +17,35 @@ type Server struct {
 	config *config.Config
 	http   *http.Server
 	db     *database.DB
+	router *gin.Engine
 }
 
 // New creates a new Server instance
 func New(cfg *config.Config) *Server {
-	// Initialize database connection
+	router := gin.Default()
+	srv := &Server{
+		router: router,
+		config: cfg,
+	}
+
+	// Initialize database
 	db, err := database.New(cfg)
 	if err != nil {
-		log.Printf("Warning: Failed to connect to database: %v", err)
+		panic(err)
 	}
 
-	mux := http.NewServeMux()
+	// Initialize services
+	profileService := service.NewProfileService(db.GormDB, cfg.JWTSecret)
 
 	// Register routes
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	api.RegisterProfileRoutes(router, profileService)
 
-		health := map[string]string{
-			"status": "ok",
-		}
-
-		// Check database health if connection exists
-		if db != nil {
-			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-			defer cancel()
-
-			if err := db.HealthCheck(ctx); err != nil {
-				health["db"] = "unreachable"
-				w.WriteHeader(http.StatusServiceUnavailable)
-			} else {
-				health["db"] = "ok"
-			}
-		} else {
-			health["db"] = "not_initialized"
-		}
-
-		json.NewEncoder(w).Encode(health)
+	// Health check endpoint
+	router.GET("/api/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Register profile API routes
-	api.RegisterProfileRoutes(mux)
-
-	// Wrap mux with error handling middleware
-	handler := middleware.ErrorHandler(mux)
-
-	return &Server{
-		config: cfg,
-		db:     db,
-		http: &http.Server{
-			Addr:         fmt.Sprintf(":%s", cfg.ServerPort),
-			Handler:      handler,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-		},
-	}
+	return srv
 }
 
 // Start starts the HTTP server

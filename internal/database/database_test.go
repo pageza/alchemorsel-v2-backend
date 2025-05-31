@@ -1,12 +1,13 @@
 package database
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -25,20 +26,43 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestDatabaseConnection(t *testing.T) {
+func TestNew(t *testing.T) {
 	cfg := &config.Config{
-		DBHost:     os.Getenv("DB_HOST"),
-		DBPort:     os.Getenv("DB_PORT"),
-		DBUser:     os.Getenv("DB_USER"),
-		DBPassword: os.Getenv("DB_PASSWORD"),
-		DBName:     os.Getenv("DB_NAME"),
+		DBHost:     "localhost",
+		DBPort:     "5432",
+		DBUser:     "postgres",
+		DBPassword: "postgres",
+		DBName:     "alchemorsel_test",
+		DBSSLMode:  "disable",
 	}
 
 	db, err := New(cfg)
-	require.NoError(t, err)
-	assert.NotNil(t, db)
-
-	// Test connection
-	err = db.Ping()
 	assert.NoError(t, err)
+	assert.NotNil(t, db)
+	assert.NotNil(t, db.GormDB)
+
+	// Test health check
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = db.HealthCheck(ctx)
+	assert.NoError(t, err)
+
+	// Test closing the connection
+	err = db.Close()
+	assert.NoError(t, err)
+}
+
+func TestNewWithInvalidConfig(t *testing.T) {
+	cfg := &config.Config{
+		DBHost:     "invalid-host",
+		DBPort:     "5432",
+		DBUser:     "postgres",
+		DBPassword: "postgres",
+		DBName:     "alchemorsel_test",
+		DBSSLMode:  "disable",
+	}
+
+	db, err := New(cfg)
+	assert.Error(t, err)
+	assert.Nil(t, db)
 }

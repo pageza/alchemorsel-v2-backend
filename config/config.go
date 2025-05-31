@@ -3,36 +3,74 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // Config holds all configuration for the application
 type Config struct {
+	// Server configuration
 	ServerPort string
+	ServerHost string
+
+	// Database configuration
 	DBHost     string
 	DBPort     string
 	DBUser     string
 	DBPassword string
 	DBName     string
+	DBSSLMode  string
+
+	// Redis configuration
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       int
+
+	// JWT configuration
+	JWTSecret string
+
+	// New fields
+	RedisURL string
 }
 
-// New creates a new Config with values from Docker Secrets
+// New creates a new Config instance with values from environment variables
 func New() *Config {
+	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
+
 	return &Config{
+		// Server configuration
 		ServerPort: getEnv("SERVER_PORT", "8080"),
+		ServerHost: getEnv("SERVER_HOST", "0.0.0.0"),
+
+		// Database configuration
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnvOrSecret("DB_USER", "postgres_user"),
-		DBPassword: getEnvOrSecret("DB_PASSWORD", "postgres_password"),
-		DBName:     getEnvOrSecret("DB_NAME", "postgres_db"),
+		DBUser:     getEnv("DB_USER", "postgres"),
+		DBPassword: getEnv("DB_PASSWORD", "postgres"),
+		DBName:     getEnv("DB_NAME", "alchemorsel"),
+		DBSSLMode:  getEnv("DB_SSL_MODE", "disable"),
+
+		// Redis configuration
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       redisDB,
+
+		// JWT configuration
+		JWTSecret: getEnv("JWT_SECRET", "your-secret-key"),
+
+		// New fields
+		RedisURL: getEnv("REDIS_URL", "redis://localhost:6379"),
 	}
 }
 
 // getEnv gets an environment variable or returns a default value
 func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
 	}
-	return defaultValue
+	return value
 }
 
 // getEnvOrSecret tries to get an environment variable, then falls back to Docker secret
@@ -50,4 +88,25 @@ func readSecret(name string) string {
 		return string(data)
 	}
 	return ""
+}
+
+func LoadConfig() (*Config, error) {
+	cfg := &Config{
+		DBHost:     getEnvOrDefault("DB_HOST", "localhost"),
+		DBPort:     getEnvOrDefault("DB_PORT", "5432"),
+		DBUser:     getEnvOrDefault("DB_USER", "postgres"),
+		DBPassword: getEnvOrDefault("DB_PASSWORD", "postgres"),
+		DBName:     getEnvOrDefault("DB_NAME", "alchemorsel"),
+		DBSSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
+		JWTSecret:  getEnvOrDefault("JWT_SECRET", "your-secret-key"),
+		RedisURL:   getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
+	}
+	return cfg, nil
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
