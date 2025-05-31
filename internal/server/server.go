@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/pageza/alchemorsel-v2/backend/config"
+	"github.com/pageza/alchemorsel-v2/backend/internal/api"
 	"github.com/pageza/alchemorsel-v2/backend/internal/database"
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 )
 
 // Server represents the HTTP server
@@ -55,12 +57,18 @@ func New(cfg *config.Config) *Server {
 		json.NewEncoder(w).Encode(health)
 	})
 
+	// Register profile API routes
+	api.RegisterProfileRoutes(mux)
+
+	// Wrap mux with error handling middleware
+	handler := middleware.ErrorHandler(mux)
+
 	return &Server{
 		config: cfg,
 		db:     db,
 		http: &http.Server{
 			Addr:         fmt.Sprintf(":%s", cfg.ServerPort),
-			Handler:      mux,
+			Handler:      handler,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		},

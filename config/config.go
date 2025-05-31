@@ -21,9 +21,9 @@ func New() *Config {
 		ServerPort: getEnv("SERVER_PORT", "8080"),
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     readSecret("postgres_user"),
-		DBPassword: readSecret("postgres_password"),
-		DBName:     readSecret("postgres_db"),
+		DBUser:     getEnvOrSecret("DB_USER", "postgres_user"),
+		DBPassword: getEnvOrSecret("DB_PASSWORD", "postgres_password"),
+		DBName:     getEnvOrSecret("DB_NAME", "postgres_db"),
 	}
 }
 
@@ -33,6 +33,14 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// getEnvOrSecret tries to get an environment variable, then falls back to Docker secret
+func getEnvOrSecret(envKey, secretName string) string {
+	if value, exists := os.LookupEnv(envKey); exists {
+		return value
+	}
+	return readSecret(secretName)
 }
 
 // readSecret reads a Docker secret from the default secrets directory
