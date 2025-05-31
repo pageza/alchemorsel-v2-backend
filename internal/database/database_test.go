@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 	// Setup
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_PORT", "5432")
-	os.Setenv("DB_USER", "alchemorsel")
+	os.Setenv("DB_USER", "postgres")
 	os.Setenv("DB_PASSWORD", "postgres")
 	os.Setenv("DB_NAME", "alchemorsel_test")
 	os.Setenv("DB_SSL_MODE", "disable")
