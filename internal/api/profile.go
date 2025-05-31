@@ -31,17 +31,19 @@ type ProfileService interface {
 
 type ProfileHandler struct {
 	profileService ProfileService
+	authService    middleware.TokenValidator
 }
 
-func NewProfileHandler(profileService ProfileService) *ProfileHandler {
+func NewProfileHandler(profileService ProfileService, authService middleware.TokenValidator) *ProfileHandler {
 	return &ProfileHandler{
 		profileService: profileService,
+		authService:    authService,
 	}
 }
 
 func (h *ProfileHandler) RegisterRoutes(router *gin.RouterGroup) {
 	profile := router.Group("/profile")
-	profile.Use(middleware.AuthMiddleware(h.profileService))
+	profile.Use(middleware.AuthMiddleware(h.authService))
 	{
 		profile.GET("", h.GetProfile)
 		profile.PUT("", h.UpdateProfile)
@@ -273,11 +275,11 @@ func (h *ProfileHandler) UpdateAppliances(c *gin.Context) {
 }
 
 // RegisterProfileRoutes registers the profile API routes
-func RegisterProfileRoutes(router *gin.Engine, profileService ProfileService) {
-	handler := NewProfileHandler(profileService)
+func RegisterProfileRoutes(router *gin.Engine, profileService ProfileService, authService middleware.TokenValidator) {
+	handler := NewProfileHandler(profileService, authService)
 
 	profile := router.Group("/api/v1/profile")
-	profile.Use(middleware.AuthMiddleware(profileService))
+	profile.Use(middleware.AuthMiddleware(authService))
 	{
 		profile.GET("", handler.GetProfile)
 		profile.PUT("", handler.UpdateProfile)

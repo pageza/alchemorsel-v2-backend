@@ -55,7 +55,7 @@ func (s *Server) Start(cfg *config.Config) error {
 	authService := service.NewAuthService(s.db, cfg.JWTSecret)
 
 	// Register routes
-	profileHandler := api.NewProfileHandler(profileService)
+	profileHandler := api.NewProfileHandler(profileService, authService)
 	authHandler := api.NewAuthHandler(authService)
 
 	apiGroup := s.router.Group("/api/v1")

@@ -15,7 +15,7 @@ func SetupAPI(router *gin.Engine, db *gorm.DB, jwtSecret string) {
 
 		// Initialize handlers
 		authHandler := NewAuthHandler(authService)
-		profileHandler := NewProfileHandler(profileService)
+		profileHandler := NewProfileHandler(profileService, authService)
 
 		// Register routes
 		authHandler.RegisterRoutes(v1)
