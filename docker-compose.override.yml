@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      target: development
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../alchemorsel-v2-frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+  backend:
+    volumes:
+      - .:/app
+      - /app/alchemorsel_dev.db
+    environment:
+      - DATABASE_URL=file:./alchemorsel_dev.db
+    command: go run ./cmd/api
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
