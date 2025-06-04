@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/google/uuid"
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
@@ -29,11 +30,11 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 	{
 		recipes.GET("", h.ListRecipes)
 		recipes.GET("/:id", h.GetRecipe)
-		recipes.POST("", AuthMiddleware(h.authService), h.CreateRecipe)
-		recipes.PUT("/:id", AuthMiddleware(h.authService), h.UpdateRecipe)
-		recipes.DELETE("/:id", AuthMiddleware(h.authService), h.DeleteRecipe)
-		recipes.POST("/:id/favorite", AuthMiddleware(h.authService), h.FavoriteRecipe)
-		recipes.DELETE("/:id/favorite", AuthMiddleware(h.authService), h.UnfavoriteRecipe)
+		recipes.POST("", middleware.AuthMiddleware(h.authService), h.CreateRecipe)
+		recipes.PUT("/:id", middleware.AuthMiddleware(h.authService), h.UpdateRecipe)
+		recipes.DELETE("/:id", middleware.AuthMiddleware(h.authService), h.DeleteRecipe)
+		recipes.POST("/:id/favorite", middleware.AuthMiddleware(h.authService), h.FavoriteRecipe)
+		recipes.DELETE("/:id/favorite", middleware.AuthMiddleware(h.authService), h.UnfavoriteRecipe)
 	}
 }
 
