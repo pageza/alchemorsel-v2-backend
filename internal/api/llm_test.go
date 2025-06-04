@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -47,17 +46,7 @@ func setupLLMDB(t *testing.T) *gorm.DB {
 func TestQuerySavesRecipe(t *testing.T) {
 	db := setupLLMDB(t)
 
-	tmpFile, err := os.CreateTemp(t.TempDir(), "key")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	if _, err := tmpFile.WriteString("dummy"); err != nil {
-		t.Fatalf("failed to write key: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("failed to close temp file: %v", err)
-	}
-	t.Setenv("DEEPSEEK_API_KEY_FILE", tmpFile.Name())
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -124,17 +113,7 @@ func TestQuerySavesRecipe(t *testing.T) {
 func TestQueryUnauthorized(t *testing.T) {
 	db := setupLLMDB(t)
 
-	tmpFile, err := os.CreateTemp(t.TempDir(), "key")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	if _, err := tmpFile.WriteString("dummy"); err != nil {
-		t.Fatalf("failed to write key: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("failed to close temp file: %v", err)
-	}
-	t.Setenv("DEEPSEEK_API_KEY_FILE", tmpFile.Name())
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
