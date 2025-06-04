@@ -74,6 +74,12 @@ The API documentation is generated using Swagger/OpenAPI. To view the documentat
 - `q` - search term matched against recipe name and description
 - `category` - filter by category
 
+### LLM Endpoint
+
+`POST /api/v1/llm/query` generates a recipe using the language model. This route
+requires a valid `Authorization` header with a bearer token. The response
+includes the persisted recipe with the authenticated user ID attached.
+
 ## Contributing
 
 1. Create a new branch for your feature
