@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
 
@@ -172,4 +173,13 @@ func (s *ProfileService) Logout(userID uuid.UUID) error {
 	// In a real application, you might want to invalidate the user's session or token
 	// For now, we'll just return nil as the token invalidation is handled by the client
 	return nil
+}
+
+// GetUserRecipes returns all recipes created by the given user
+func (s *ProfileService) GetUserRecipes(userID uuid.UUID) ([]model.Recipe, error) {
+	var recipes []model.Recipe
+	if err := s.db.Where("user_id = ?", userID).Find(&recipes).Error; err != nil {
+		return nil, err
+	}
+	return recipes, nil
 }

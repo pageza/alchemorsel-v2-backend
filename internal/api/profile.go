@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
 
@@ -21,6 +22,7 @@ type ProfileService interface {
 	UpdateProfile(userID uuid.UUID, updates map[string]interface{}) error
 	Logout(userID uuid.UUID) error
 	ValidateToken(token string) (*middleware.TokenClaims, error)
+	GetUserRecipes(userID uuid.UUID) ([]model.Recipe, error)
 }
 
 type ProfileHandler struct {
@@ -56,7 +58,16 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, profile)
+	recipes, err := h.profileService.GetUserRecipes(userID.(uuid.UUID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get recipes"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"profile": profile,
+		"recipes": recipes,
+	})
 }
 
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
