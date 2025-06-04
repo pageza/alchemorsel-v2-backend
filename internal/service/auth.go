@@ -85,3 +85,38 @@ func (s *AuthService) generateToken(userID uuid.UUID) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.jwtSecret))
 }
+
+type TokenClaims struct {
+	UserID uuid.UUID
+}
+
+func (s *AuthService) ValidateToken(tokenString string) (*TokenClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(s.jwtSecret), nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		userIDStr, ok := claims["user_id"].(string)
+		if !ok {
+			return nil, errors.New("invalid token claims")
+		}
+
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &TokenClaims{
+			UserID: userID,
+		}, nil
+	}
+
+	return nil, errors.New("invalid token")
+}

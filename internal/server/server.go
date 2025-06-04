@@ -35,8 +35,8 @@ func New(cfg *config.Config, db *gorm.DB) *Server {
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Cache-Control", "X-Requested-With"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -54,13 +54,21 @@ func (s *Server) Start(cfg *config.Config) error {
 	profileService := service.NewProfileService(s.db, cfg.JWTSecret)
 	authService := service.NewAuthService(s.db, cfg.JWTSecret)
 
-	// Register routes
+	// Initialize handlers
 	profileHandler := api.NewProfileHandler(profileService)
 	authHandler := api.NewAuthHandler(authService)
+	recipeHandler := api.NewRecipeHandler(s.db, authService)
+
+	llmHandler, err := api.NewLLMHandler(s.db)
+	if err != nil {
+		return fmt.Errorf("failed to create LLM handler: %w", err)
+	}
 
 	apiGroup := s.router.Group("/api/v1")
 	profileHandler.RegisterRoutes(apiGroup)
 	authHandler.RegisterRoutes(apiGroup)
+	recipeHandler.RegisterRoutes(apiGroup)
+	llmHandler.RegisterRoutes(apiGroup)
 
 	// Add health check endpoint
 	s.router.GET("/health", func(c *gin.Context) {

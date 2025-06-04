@@ -97,12 +97,12 @@ func LoadConfig() (*Config, error) {
 		ServerHost: getEnvOrDefault("SERVER_HOST", "0.0.0.0"),
 		DBHost:     getEnvOrDefault("DB_HOST", "localhost"),
 		DBPort:     getEnvOrDefault("DB_PORT", "5432"),
-		DBUser:     getEnvOrDefault("DB_USER", "postgres"),
+		DBUser:     getEnvOrSecret("DB_USER", "db_user"),
 		DBPassword: getEnvOrSecret("DB_PASSWORD", "db_password"),
-		DBName:     getEnvOrDefault("DB_NAME", "alchemorsel"),
+		DBName:     getEnvOrSecret("DB_NAME", "db_name"),
 		DBSSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
 		JWTSecret:  getEnvOrSecret("JWT_SECRET", "jwt_secret"),
-		RedisURL:   getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
+		RedisURL:   getEnvOrSecret("REDIS_URL", "redis_url"),
 	}
 	return cfg, nil
 }
