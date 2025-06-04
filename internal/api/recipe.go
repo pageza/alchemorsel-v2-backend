@@ -122,19 +122,55 @@ func (h *RecipeHandler) DeleteRecipe(c *gin.Context) {
 }
 
 func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
-	id := c.Param("id")
-	// TODO: Implement recipe favoriting
+	idStr := c.Param("id")
+	recipeID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe id"})
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	fav := model.RecipeFavorite{
+		RecipeID: recipeID,
+		UserID:   userIDVal.(uuid.UUID),
+	}
+	if err := h.db.Create(&fav).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to favorite recipe"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Recipe favorited successfully",
-		"id":      id,
+		"id":      idStr,
 	})
 }
 
 func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
-	id := c.Param("id")
-	// TODO: Implement recipe unfavoriting
+	idStr := c.Param("id")
+	recipeID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe id"})
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	if err := h.db.Where("recipe_id = ? AND user_id = ?", recipeID, userIDVal.(uuid.UUID)).Delete(&model.RecipeFavorite{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unfavorite recipe"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Recipe unfavorited successfully",
-		"id":      id,
+		"id":      idStr,
 	})
 }

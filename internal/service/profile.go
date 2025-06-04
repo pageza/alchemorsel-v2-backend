@@ -56,39 +56,39 @@ func (s *ProfileService) GenerateToken(userID, username string) (string, error) 
 
 // ValidateToken validates a JWT token and returns the claims
 func (s *ProfileService) ValidateToken(tokenString string) (*middleware.TokenClaims, error) {
-        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-                if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-                        return nil, ErrInvalidToken
-                }
-                return s.jwtSecret, nil
-        })
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
+		}
+		return s.jwtSecret, nil
+	})
 
-        if err != nil {
-                if errors.Is(err, jwt.ErrTokenExpired) {
-                        return nil, ErrTokenExpired
-                }
-                return nil, ErrInvalidToken
-        }
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrTokenExpired
+		}
+		return nil, ErrInvalidToken
+	}
 
-        if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-                userIDStr, ok := claims["user_id"].(string)
-                if !ok {
-                        return nil, ErrInvalidToken
-                }
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		userIDStr, ok := claims["user_id"].(string)
+		if !ok {
+			return nil, ErrInvalidToken
+		}
 
-                userID, err := uuid.Parse(userIDStr)
-                if err != nil {
-                        return nil, ErrInvalidToken
-                }
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return nil, ErrInvalidToken
+		}
 
-                username, _ := claims["username"].(string)
-                return &middleware.TokenClaims{
-                        UserID:   userID,
-                        Username: username,
-                }, nil
-        }
+		username, _ := claims["username"].(string)
+		return &middleware.TokenClaims{
+			UserID:   userID,
+			Username: username,
+		}, nil
+	}
 
-        return nil, ErrInvalidToken
+	return nil, ErrInvalidToken
 }
 
 // SanitizeProfile sanitizes profile data before sending to client
@@ -124,9 +124,26 @@ func (s *ProfileService) RecordProfileChange(userID, field, oldValue, newValue, 
 }
 
 // GetProfileHistory retrieves the change history for a user's profile
-func (s *ProfileService) GetProfileHistory(userID uint) ([]map[string]interface{}, error) {
-	// TODO: Implement profile history tracking
-	return []map[string]interface{}{}, nil
+func (s *ProfileService) GetProfileHistory(userID uuid.UUID) ([]map[string]interface{}, error) {
+	var histories []models.ProfileHistory
+	if err := s.db.Where("user_id = ?", userID.String()).Order("changed_at desc").Find(&histories).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, len(histories))
+	for i, h := range histories {
+		result[i] = map[string]interface{}{
+			"id":         h.ID,
+			"user_id":    h.UserID,
+			"field":      h.Field,
+			"old_value":  h.OldValue,
+			"new_value":  h.NewValue,
+			"changed_at": h.ChangedAt,
+			"changed_by": h.ChangedBy,
+		}
+	}
+
+	return result, nil
 }
 
 func (s *ProfileService) GetProfile(userID uuid.UUID) (*models.UserProfile, error) {
