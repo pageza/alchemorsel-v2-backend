@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
@@ -38,7 +39,7 @@ func NewLLMHandler(db *gorm.DB, authService *service.AuthService) (*LLMHandler, 
 func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 	llm := router.Group("/llm")
 	{
-		llm.POST("/query", AuthMiddleware(h.authService), h.Query)
+		llm.POST("/query", middleware.AuthMiddleware(h.authService), h.Query)
 	}
 }
 

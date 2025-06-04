@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -86,11 +87,7 @@ func (s *AuthService) generateToken(userID uuid.UUID) (string, error) {
 	return token.SignedString([]byte(s.jwtSecret))
 }
 
-type TokenClaims struct {
-	UserID uuid.UUID
-}
-
-func (s *AuthService) ValidateToken(tokenString string) (*TokenClaims, error) {
+func (s *AuthService) ValidateToken(tokenString string) (*middleware.TokenClaims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -113,7 +110,7 @@ func (s *AuthService) ValidateToken(tokenString string) (*TokenClaims, error) {
 			return nil, err
 		}
 
-		return &TokenClaims{
+		return &middleware.TokenClaims{
 			UserID: userID,
 		}, nil
 	}
