@@ -32,6 +32,6 @@ COPY --from=builder /app/migrations ./migrations
 # Verify files in the final image
 RUN ls -la
 
-EXPOSE 8000
+EXPOSE 8080
 
 CMD ["./main"] 
