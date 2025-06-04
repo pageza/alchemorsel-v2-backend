@@ -25,13 +25,18 @@ DB_PASSWORD=your_password
 DB_NAME=your_database
 REDIS_HOST=localhost
 REDIS_PORT=6379
+# API authentication (one of these is required)
 DEEPSEEK_API_KEY=your_deepseek_key
-# Alternatively, specify DEEPSEEK_API_KEY_FILE with a path to the key file
+DEEPSEEK_API_KEY_FILE=path/to/keyfile
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+# S3 configuration for profile pictures
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=alchemorsel-profile-pictures
 ```
 
 3. Run the application:
 ```bash
-go run main.go
+go run ./cmd/api
 ```
 
 ## Development
@@ -44,19 +49,24 @@ go run main.go
 
 ```
 backend/
-├── cmd/              # Application entry points
-├── internal/         # Private application code
-│   ├── api/         # API handlers
-│   ├── config/      # Configuration
-│   ├── models/      # Data models
-│   └── services/    # Business logic
-├── pkg/             # Public library code
-└── main.go         # Main application entry point
+├── cmd/
+│   └── api/         # Application entry point
+├── config/          # Configuration helpers
+├── internal/        # Private application code
+│   ├── api/         # HTTP handlers
+│   ├── database/    # Database utilities
+│   ├── middleware/  # HTTP middleware
+│   ├── model/       # Recipe models
+│   ├── models/      # User and profile models
+│   ├── server/      # Server setup
+│   └── service/     # Business logic
+├── migrations/      # Database migrations
+└── scripts/         # Utility scripts
 ```
 
 ## Available Commands
 
-- `go run main.go` - Run the application
+- `go run ./cmd/api` - Run the application
 - `go test ./...` - Run all tests
 - `go mod tidy` - Clean up dependencies
 - `go fmt ./...` - Format code
