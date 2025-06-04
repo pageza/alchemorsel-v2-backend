@@ -59,7 +59,7 @@ func (s *Server) Start(cfg *config.Config) error {
 	authHandler := api.NewAuthHandler(authService)
 	recipeHandler := api.NewRecipeHandler(s.db, authService)
 
-	llmHandler, err := api.NewLLMHandler(s.db)
+	llmHandler, err := api.NewLLMHandler(s.db, authService)
 	if err != nil {
 		return fmt.Errorf("failed to create LLM handler: %w", err)
 	}

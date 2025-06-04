@@ -8,13 +8,16 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 func setupLLMDB(t *testing.T) *gorm.DB {
@@ -63,18 +66,33 @@ func TestQuerySavesRecipe(t *testing.T) {
 	defer ts.Close()
 
 	t.Setenv("DEEPSEEK_API_URL", ts.URL)
-	handler, err := NewLLMHandler(db)
+	authSvc := service.NewAuthService(nil, "secret")
+	handler, err := NewLLMHandler(db, authSvc)
 	if err != nil {
 		t.Fatalf("failed to create handler: %v", err)
 	}
 
-	body := `{"query":"test","intent":"generate"}`
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/llm/query", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	handler.RegisterRoutes(v1)
 
-	handler.Query(c)
+	// create token
+	userID := uuid.New()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": userID.String(),
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	})
+	tokenStr, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		t.Fatalf("failed to sign token: %v", err)
+	}
+
+	body := `{"query":"test","intent":"generate"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected status %d got %d", http.StatusCreated, w.Code)
@@ -90,10 +108,15 @@ func TestQuerySavesRecipe(t *testing.T) {
 	if resp.Recipe.ID == uuid.Nil {
 		t.Fatalf("recipe ID not set")
 	}
+	if resp.Recipe.UserID != userID {
+		t.Fatalf("user id mismatch")
+	}
 
-	var count int64
-	db.Model(&model.Recipe{}).Where("id = ?", resp.Recipe.ID.String()).Count(&count)
-	if count != 1 {
+	var record model.Recipe
+	if err := db.First(&record, "id = ?", resp.Recipe.ID.String()).Error; err != nil {
 		t.Fatalf("recipe not saved")
+	}
+	if record.UserID != userID {
+		t.Fatalf("user id not persisted")
 	}
 }

@@ -15,20 +15,22 @@ import (
 
 // LLMHandler handles LLM-related requests
 type LLMHandler struct {
-	db         *gorm.DB
-	llmService *service.LLMService
+	db          *gorm.DB
+	llmService  *service.LLMService
+	authService *service.AuthService
 }
 
 // NewLLMHandler creates a new LLMHandler instance
-func NewLLMHandler(db *gorm.DB) (*LLMHandler, error) {
+func NewLLMHandler(db *gorm.DB, authService *service.AuthService) (*LLMHandler, error) {
 	llmService, err := service.NewLLMService()
 	if err != nil {
 		return nil, err
 	}
 
 	return &LLMHandler{
-		db:         db,
-		llmService: llmService,
+		db:          db,
+		llmService:  llmService,
+		authService: authService,
 	}, nil
 }
 
@@ -36,7 +38,7 @@ func NewLLMHandler(db *gorm.DB) (*LLMHandler, error) {
 func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 	llm := router.Group("/llm")
 	{
-		llm.POST("/query", h.Query)
+		llm.POST("/query", AuthMiddleware(h.authService), h.Query)
 	}
 }
 
@@ -93,6 +95,19 @@ func (h *LLMHandler) Query(c *gin.Context) {
 	log.Printf("- Servings (type: %T): %v", recipeData.Servings, recipeData.Servings)
 	log.Printf("- Difficulty (type: %T): %v", recipeData.Difficulty, recipeData.Difficulty)
 
+	// Get the authenticated user ID from context
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	// Convert the parsed data into a model.Recipe
 	recipe := model.Recipe{
 		ID:           uuid.New(),
@@ -101,7 +116,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		Category:     recipeData.Category,
 		Ingredients:  model.JSONBStringArray(recipeData.Ingredients),
 		Instructions: model.JSONBStringArray(recipeData.Instructions),
-		UserID:       uuid.New(),
+		UserID:       userID,
 	}
 
 	// Persist the recipe
