@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/stretchr/testify/mock"
 )
@@ -45,6 +47,11 @@ func (m *MockProfileService) ValidateToken(token string) (*middleware.TokenClaim
 	return args.Get(0).(*middleware.TokenClaims), args.Error(1)
 }
 
+func (m *MockProfileService) GetUserRecipes(userID uuid.UUID) ([]model.Recipe, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]model.Recipe), args.Error(1)
+}
+
 func TestGetProfile(t *testing.T) {
 	mockService := new(MockProfileService)
 	handler := NewProfileHandler(mockService)
@@ -60,8 +67,14 @@ func TestGetProfile(t *testing.T) {
 		Bio:      "Test bio",
 	}
 
+	// Mock recipes
+	expectedRecipes := []model.Recipe{
+		{ID: uuid.New(), Name: "Test", Ingredients: model.JSONBStringArray{}, Instructions: model.JSONBStringArray{}, UserID: testUUID},
+	}
+
 	// Setup mock expectations
 	mockService.On("GetProfile", testUUID).Return(expectedProfile, nil)
+	mockService.On("GetUserRecipes", testUUID).Return(expectedRecipes, nil)
 
 	// Create test request
 	w := httptest.NewRecorder()
@@ -73,7 +86,18 @@ func TestGetProfile(t *testing.T) {
 
 	// Assert response
 	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		t.Fatalf("Expected status code %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Profile models.UserProfile `json:"profile"`
+		Recipes []model.Recipe     `json:"recipes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Recipes) != len(expectedRecipes) {
+		t.Fatalf("expected %d recipes got %d", len(expectedRecipes), len(resp.Recipes))
 	}
 }
 
