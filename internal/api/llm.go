@@ -61,8 +61,6 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		return
 	}
 
-	log.Printf("Raw recipe JSON from DeepSeek (type: %T): %s", recipeJSON, recipeJSON)
-
 	// Parse the JSON response into a recipe struct
 	type RecipeData struct {
 		Name         string   `json:"name"`
