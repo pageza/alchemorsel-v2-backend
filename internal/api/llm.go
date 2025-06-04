@@ -83,18 +83,6 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		return
 	}
 
-	// Log detailed information about the parsed data
-	log.Printf("Parsed recipe data structure:")
-	log.Printf("- Name (type: %T): %v", recipeData.Name, recipeData.Name)
-	log.Printf("- Description (type: %T): %v", recipeData.Description, recipeData.Description)
-	log.Printf("- Category (type: %T): %v", recipeData.Category, recipeData.Category)
-	log.Printf("- Ingredients (type: %T): %v", recipeData.Ingredients, recipeData.Ingredients)
-	log.Printf("- Instructions (type: %T): %v", recipeData.Instructions, recipeData.Instructions)
-	log.Printf("- PrepTime (type: %T): %v", recipeData.PrepTime, recipeData.PrepTime)
-	log.Printf("- CookTime (type: %T): %v", recipeData.CookTime, recipeData.CookTime)
-	log.Printf("- Servings (type: %T): %v", recipeData.Servings, recipeData.Servings)
-	log.Printf("- Difficulty (type: %T): %v", recipeData.Difficulty, recipeData.Difficulty)
-
 	// Get the authenticated user ID from context
 	userIDVal, exists := c.Get("user_id")
 	if !exists {
