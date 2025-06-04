@@ -25,6 +25,8 @@ DB_PASSWORD=your_password
 DB_NAME=your_database
 REDIS_HOST=localhost
 REDIS_PORT=6379
+DEEPSEEK_API_KEY=your_deepseek_key
+# Alternatively, specify DEEPSEEK_API_KEY_FILE with a path to the key file
 ```
 
 3. Run the application:
@@ -73,6 +75,10 @@ The API documentation is generated using Swagger/OpenAPI. To view the documentat
 
 - `q` - search term matched against recipe name and description
 - `category` - filter by category
+- `POST /api/v1/recipes/:id/favorite` - add a recipe to the authenticated user's favorites
+- `DELETE /api/v1/recipes/:id/favorite` - remove a recipe from the authenticated user's favorites
+
+Favorites are stored in the `recipe_favorites` table created by the database migrations.
 
 ### LLM Endpoint
 

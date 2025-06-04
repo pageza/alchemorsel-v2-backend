@@ -19,19 +19,22 @@ type LLMService struct {
 
 // NewLLMService creates a new LLMService instance
 func NewLLMService() (*LLMService, error) {
-	apiKeyFile := os.Getenv("DEEPSEEK_API_KEY_FILE")
-	if apiKeyFile == "" {
-		return nil, fmt.Errorf("DEEPSEEK_API_KEY_FILE environment variable not set")
-	}
-
-	apiKeyBytes, err := os.ReadFile(apiKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read API key file: %w", err)
-	}
-
-	apiKey := strings.TrimSpace(string(apiKeyBytes))
+	apiKey := os.Getenv("DEEPSEEK_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("API key file is empty")
+		apiKeyFile := os.Getenv("DEEPSEEK_API_KEY_FILE")
+		if apiKeyFile == "" {
+			return nil, fmt.Errorf("DEEPSEEK_API_KEY or DEEPSEEK_API_KEY_FILE must be set")
+		}
+
+		apiKeyBytes, err := os.ReadFile(apiKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read API key file: %w", err)
+		}
+
+		apiKey = strings.TrimSpace(string(apiKeyBytes))
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key file is empty")
+		}
 	}
 
 	apiURL := os.Getenv("DEEPSEEK_API_URL")
