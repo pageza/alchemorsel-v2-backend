@@ -34,9 +34,14 @@ func NewLLMService() (*LLMService, error) {
 		return nil, fmt.Errorf("API key file is empty")
 	}
 
+	apiURL := os.Getenv("DEEPSEEK_API_URL")
+	if apiURL == "" {
+		apiURL = "https://api.deepseek.com/v1/chat/completions"
+	}
+
 	return &LLMService{
 		apiKey: apiKey,
-		apiURL: "https://api.deepseek.com/v1/chat/completions",
+		apiURL: apiURL,
 	}, nil
 }
 

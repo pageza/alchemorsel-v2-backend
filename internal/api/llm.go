@@ -6,8 +6,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
@@ -91,10 +93,24 @@ func (h *LLMHandler) Query(c *gin.Context) {
 	log.Printf("- Servings (type: %T): %v", recipeData.Servings, recipeData.Servings)
 	log.Printf("- Difficulty (type: %T): %v", recipeData.Difficulty, recipeData.Difficulty)
 
-	// Return the recipe data without saving to database
+	// Convert the parsed data into a model.Recipe
+	recipe := model.Recipe{
+		ID:           uuid.New(),
+		Name:         recipeData.Name,
+		Description:  recipeData.Description,
+		Category:     recipeData.Category,
+		Ingredients:  model.JSONBStringArray(recipeData.Ingredients),
+		Instructions: model.JSONBStringArray(recipeData.Instructions),
+		UserID:       uuid.New(),
+	}
+
+	// Persist the recipe
+	if err := h.db.Create(&recipe).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save recipe"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"recipe": recipeData,
-		"query":  req.Query,
-		"intent": req.Intent,
+		"recipe": recipe,
 	})
 }
