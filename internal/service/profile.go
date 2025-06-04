@@ -56,35 +56,39 @@ func (s *ProfileService) GenerateToken(userID, username string) (string, error) 
 
 // ValidateToken validates a JWT token and returns the claims
 func (s *ProfileService) ValidateToken(tokenString string) (*middleware.TokenClaims, error) {
-	claims := &Claims{}
+        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+                if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+                        return nil, ErrInvalidToken
+                }
+                return s.jwtSecret, nil
+        })
 
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken
-		}
-		return s.jwtSecret, nil
-	})
+        if err != nil {
+                if errors.Is(err, jwt.ErrTokenExpired) {
+                        return nil, ErrTokenExpired
+                }
+                return nil, ErrInvalidToken
+        }
 
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, ErrTokenExpired
-		}
-		return nil, ErrInvalidToken
-	}
+        if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+                userIDStr, ok := claims["user_id"].(string)
+                if !ok {
+                        return nil, ErrInvalidToken
+                }
 
-	if !token.Valid {
-		return nil, ErrInvalidToken
-	}
+                userID, err := uuid.Parse(userIDStr)
+                if err != nil {
+                        return nil, ErrInvalidToken
+                }
 
-	userID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, ErrInvalidToken
-	}
+                username, _ := claims["username"].(string)
+                return &middleware.TokenClaims{
+                        UserID:   userID,
+                        Username: username,
+                }, nil
+        }
 
-	return &middleware.TokenClaims{
-		UserID:   userID,
-		Username: claims.Username,
-	}, nil
+        return nil, ErrInvalidToken
 }
 
 // SanitizeProfile sanitizes profile data before sending to client
