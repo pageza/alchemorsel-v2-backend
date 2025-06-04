@@ -120,3 +120,46 @@ func TestQuerySavesRecipe(t *testing.T) {
 		t.Fatalf("user id not persisted")
 	}
 }
+
+func TestQueryUnauthorized(t *testing.T) {
+	db := setupLLMDB(t)
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "key")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	if _, err := tmpFile.WriteString("dummy"); err != nil {
+		t.Fatalf("failed to write key: %v", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY_FILE", tmpFile.Name())
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"{}"}}]}`)
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEEPSEEK_API_URL", ts.URL)
+	authSvc := service.NewAuthService(nil, "secret")
+	handler, err := NewLLMHandler(db, authSvc)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	handler.RegisterRoutes(v1)
+
+	body := `{"query":"test","intent":"generate"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d got %d", http.StatusUnauthorized, w.Code)
+	}
+}
