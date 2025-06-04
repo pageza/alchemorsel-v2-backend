@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type TokenValidator interface {
@@ -12,7 +13,7 @@ type TokenValidator interface {
 }
 
 type TokenClaims struct {
-	UserID   uint
+	UserID   uuid.UUID
 	Username string
 }
 

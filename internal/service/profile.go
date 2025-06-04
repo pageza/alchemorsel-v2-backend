@@ -55,11 +55,35 @@ func (s *ProfileService) GenerateToken(userID, username string) (string, error) 
 }
 
 // ValidateToken validates a JWT token and returns the claims
-func (s *ProfileService) ValidateToken(token string) (*middleware.TokenClaims, error) {
-	// TODO: Implement token validation
+func (s *ProfileService) ValidateToken(tokenString string) (*middleware.TokenClaims, error) {
+	claims := &Claims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
+		}
+		return s.jwtSecret, nil
+	})
+
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrTokenExpired
+		}
+		return nil, ErrInvalidToken
+	}
+
+	if !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+
 	return &middleware.TokenClaims{
-		UserID:   1,
-		Username: "testuser",
+		UserID:   userID,
+		Username: claims.Username,
 	}, nil
 }
 
