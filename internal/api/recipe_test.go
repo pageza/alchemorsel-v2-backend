@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -110,5 +111,77 @@ func TestUnfavoriteRecipe(t *testing.T) {
 	db.Model(&model.RecipeFavorite{}).Where("recipe_id = ? AND user_id = ?", recipe.ID, userID).Count(&count)
 	if count != 0 {
 		t.Fatalf("favorite not removed")
+	}
+}
+
+func TestListRecipesFilters(t *testing.T) {
+	db := setupRecipeTestDB(t)
+	handler := NewRecipeHandler(db, nil)
+
+	r1 := model.Recipe{
+		ID:           uuid.New(),
+		Name:         "Pasta",
+		Description:  "Tasty pasta dish",
+		Category:     "Italian",
+		Ingredients:  model.JSONBStringArray{},
+		Instructions: model.JSONBStringArray{},
+		UserID:       uuid.New(),
+	}
+	r2 := model.Recipe{
+		ID:           uuid.New(),
+		Name:         "Salad",
+		Description:  "Healthy salad",
+		Category:     "Healthy",
+		Ingredients:  model.JSONBStringArray{},
+		Instructions: model.JSONBStringArray{},
+		UserID:       uuid.New(),
+	}
+	r3 := model.Recipe{
+		ID:           uuid.New(),
+		Name:         "Pasta Carbonara",
+		Description:  "Creamy",
+		Category:     "Italian",
+		Ingredients:  model.JSONBStringArray{},
+		Instructions: model.JSONBStringArray{},
+		UserID:       uuid.New(),
+	}
+	db.Create(&r1)
+	db.Create(&r2)
+	db.Create(&r3)
+
+	// search by q
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?q=pasta", nil)
+	handler.ListRecipes(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+	var resp struct {
+		Recipes []model.Recipe `json:"recipes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Recipes) != 2 {
+		t.Fatalf("expected 2 recipes got %d", len(resp.Recipes))
+	}
+
+	// filter by category
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?category=Healthy", nil)
+	handler.ListRecipes(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+	resp = struct {
+		Recipes []model.Recipe `json:"recipes"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Recipes) != 1 {
+		t.Fatalf("expected 1 recipe got %d", len(resp.Recipes))
 	}
 }

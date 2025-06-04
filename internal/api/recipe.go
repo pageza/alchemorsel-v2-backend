@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -38,7 +39,24 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 
 func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 	var recipes []model.Recipe
-	result := h.db.Find(&recipes)
+
+	query := h.db
+
+	if search := c.Query("q"); search != "" {
+		if h.db.Dialector.Name() == "postgres" {
+			like := "%" + search + "%"
+			query = query.Where("name ILIKE ? OR description ILIKE ?", like, like)
+		} else {
+			like := "%" + strings.ToLower(search) + "%"
+			query = query.Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ?", like, like)
+		}
+	}
+
+	if category := c.Query("category"); category != "" {
+		query = query.Where("category = ?", category)
+	}
+
+	result := query.Find(&recipes)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch recipes"})
 		return

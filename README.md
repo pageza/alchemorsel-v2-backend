@@ -67,6 +67,13 @@ The API documentation is generated using Swagger/OpenAPI. To view the documentat
 1. Start the server
 2. Visit `http://localhost:8080/swagger`
 
+### Recipes Endpoint
+
+`GET /api/v1/recipes` supports optional query parameters:
+
+- `q` - search term matched against recipe name and description
+- `category` - filter by category
+
 ## Contributing
 
 1. Create a new branch for your feature
