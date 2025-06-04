@@ -17,8 +17,6 @@ import (
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 )
 
-type mockLLMResponse struct{}
-
 func setupLLMDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -50,9 +48,13 @@ func TestQuerySavesRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	tmpFile.WriteString("dummy")
-	tmpFile.Close()
-	os.Setenv("DEEPSEEK_API_KEY_FILE", tmpFile.Name())
+	if _, err := tmpFile.WriteString("dummy"); err != nil {
+		t.Fatalf("failed to write key: %v", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY_FILE", tmpFile.Name())
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -60,7 +62,7 @@ func TestQuerySavesRecipe(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	os.Setenv("DEEPSEEK_API_URL", ts.URL)
+	t.Setenv("DEEPSEEK_API_URL", ts.URL)
 	handler, err := NewLLMHandler(db)
 	if err != nil {
 		t.Fatalf("failed to create handler: %v", err)
@@ -74,8 +76,8 @@ func TestQuerySavesRecipe(t *testing.T) {
 
 	handler.Query(c)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status %d got %d", http.StatusCreated, w.Code)
 	}
 
 	var resp struct {
