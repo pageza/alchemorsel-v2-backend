@@ -76,6 +76,9 @@ func (s *AuthService) Register(name, email, password, username, dietaryPrefs, al
 				UserID:         user.ID,
 				PreferenceType: pref,
 			}
+			if pref == "custom" {
+				dp.CustomName = "Custom Diet" // Default name for custom preferences
+			}
 			if err := s.db.Create(&dp).Error; err != nil {
 				return "", err
 			}

@@ -100,11 +100,13 @@ func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []stri
     "cook_time": "Cooking time",
     "servings": "Number of servings",
     "difficulty": "Easy/Medium/Hard",
-    "calories": "Approx calories per serving",
-    "protein": "Protein grams per serving",
-    "carbs": "Carbs grams per serving",
-    "fat": "Fat grams per serving"
-}`,
+    "calories": 350,
+    "protein": 15,
+    "carbs": 45,
+    "fat": 12
+}
+
+Note: The calories, protein, carbs, and fat fields must be numbers, not strings.`,
 		},
 		{
 			Role:    "user",
