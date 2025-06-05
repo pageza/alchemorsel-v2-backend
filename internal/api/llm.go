@@ -46,8 +46,9 @@ func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 // Query handles LLM query requests
 func (h *LLMHandler) Query(c *gin.Context) {
 	var req struct {
-		Query  string `json:"query" binding:"required"`
-		Intent string `json:"intent" binding:"required"`
+		Query    string `json:"query" binding:"required"`
+		Intent   string `json:"intent" binding:"required"`
+		RecipeID string `json:"recipe_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -92,6 +93,39 @@ func (h *LLMHandler) Query(c *gin.Context) {
 	userID, ok := userIDVal.(uuid.UUID)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	if req.Intent == "modify" {
+		if req.RecipeID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "recipe_id required"})
+			return
+		}
+		rid, err := uuid.Parse(req.RecipeID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe_id"})
+			return
+		}
+
+		var existing model.Recipe
+		if err := h.db.First(&existing, "id = ?", rid).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+
+		existing.Name = recipeData.Name
+		existing.Description = recipeData.Description
+		existing.Category = recipeData.Category
+		existing.Ingredients = model.JSONBStringArray(recipeData.Ingredients)
+		existing.Instructions = model.JSONBStringArray(recipeData.Instructions)
+		existing.Embedding = service.GenerateEmbedding(recipeData.Name + " " + recipeData.Description)
+
+		if err := h.db.Save(&existing).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save recipe"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"recipe": existing})
 		return
 	}
 
