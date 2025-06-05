@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
@@ -18,12 +19,12 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 }
 
 type RegisterRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
-	Username string `json:"username" binding:"required"`
-	DietaryPreferences string `json:"dietary_preferences"`
-	Allergies string `json:"allergies"`
+	Name               string   `json:"name" binding:"required"`
+	Email              string   `json:"email" binding:"required,email"`
+	Password           string   `json:"password" binding:"required,min=6"`
+	Username           string   `json:"username" binding:"required"`
+	DietaryPreferences []string `json:"dietary_preferences"`
+	Allergies          []string `json:"allergies"`
 }
 
 type LoginRequest struct {
@@ -38,7 +39,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.Register(req.Name, req.Email, req.Password)
+	dietary := strings.Join(req.DietaryPreferences, ",")
+	allergies := strings.Join(req.Allergies, ",")
+	token, err := h.authService.Register(req.Name, req.Email, req.Password, req.Username, dietary, allergies)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
