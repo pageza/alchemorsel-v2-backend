@@ -2,8 +2,8 @@ package database
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,7 +14,7 @@ import (
 // RunMigrations executes all SQL migration files in the migrations directory
 func RunMigrations(db *gorm.DB, migrationsDir string) error {
 	// Get all migration files
-	files, err := ioutil.ReadDir(migrationsDir)
+	files, err := os.ReadDir(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("failed to read migrations directory: %w", err)
 	}
@@ -52,7 +52,7 @@ func RunMigrations(db *gorm.DB, migrationsDir string) error {
 		}
 
 		// Read migration file
-		content, err := ioutil.ReadFile(filepath.Join(migrationsDir, file.Name()))
+		content, err := os.ReadFile(filepath.Join(migrationsDir, file.Name()))
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", file.Name(), err)
 		}

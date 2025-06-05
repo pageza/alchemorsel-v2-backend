@@ -258,7 +258,9 @@ func TestQueryIncludesPreferences(t *testing.T) {
 	var captured string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req service.Request
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
 		if captured == "" {
 			for _, m := range req.Messages {
 				if m.Role == "user" {

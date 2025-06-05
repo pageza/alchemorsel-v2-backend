@@ -74,7 +74,10 @@ backend/
 
 ## API Documentation
 
-The API documentation is generated using Swagger/OpenAPI. To view the documentation:
+The API documentation is generated using Swagger/OpenAPI. A machine readable
+specification is located at `api/docs/openapi.yaml`.
+
+To view the interactive documentation:
 
 1. Start the server
 2. Visit `http://localhost:8080/swagger`
