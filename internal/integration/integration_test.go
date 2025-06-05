@@ -147,7 +147,10 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 		"dietary_preferences": []string{"vegan"},
 		"allergies":           []string{"peanuts"},
 	}
-	buf, _ := json.Marshal(regBody)
+	buf, err := json.Marshal(regBody)
+	if err != nil {
+		t.Fatalf("failed to marshal register body: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(buf))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -156,7 +159,9 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 		t.Fatalf("register failed: %d", w.Code)
 	}
 	var regResp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &regResp)
+	if err := json.Unmarshal(w.Body.Bytes(), &regResp); err != nil {
+		t.Fatalf("failed to decode register response: %v", err)
+	}
 	if regResp["token"] == "" {
 		t.Fatalf("no token returned")
 	}
@@ -170,7 +175,9 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 		t.Fatalf("login failed: %d", w.Code)
 	}
 	var loginResp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &loginResp)
+	if err := json.Unmarshal(w.Body.Bytes(), &loginResp); err != nil {
+		t.Fatalf("failed to decode login response: %v", err)
+	}
 	token := loginResp["token"]
 	if token == "" {
 		t.Fatalf("no token from login")
@@ -186,7 +193,9 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 		t.Fatalf("create recipe failed: %d", w.Code)
 	}
 	var createResp struct{ Recipe model.Recipe }
-	json.Unmarshal(w.Body.Bytes(), &createResp)
+	if err := json.Unmarshal(w.Body.Bytes(), &createResp); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
 	if createResp.Recipe.ID == uuid.Nil {
 		t.Fatalf("recipe id missing")
 	}
@@ -207,7 +216,9 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 		t.Fatalf("modify recipe failed: %d", w.Code)
 	}
 	var modResp struct{ Recipe model.Recipe }
-	json.Unmarshal(w.Body.Bytes(), &modResp)
+	if err := json.Unmarshal(w.Body.Bytes(), &modResp); err != nil {
+		t.Fatalf("failed to decode modify response: %v", err)
+	}
 	if modResp.Recipe.Name != "Updated" {
 		t.Fatalf("recipe not updated")
 	}

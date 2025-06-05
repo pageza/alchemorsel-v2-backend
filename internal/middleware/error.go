@@ -42,11 +42,15 @@ func ErrorHandler(next http.Handler) http.Handler {
 				log.Printf("Error: %v", err)
 				rec.Header().Set("Content-Type", "application/json")
 				rec.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(rec).Encode(ErrorResponse{Error: "Internal Server Error"})
+				if encErr := json.NewEncoder(rec).Encode(ErrorResponse{Error: "Internal Server Error"}); encErr != nil {
+					log.Printf("failed to encode error response: %v", encErr)
+				}
 			} else if rec.statusCode >= 400 {
 				// If an error status was written, return JSON error
 				rec.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(ErrorResponse{Error: rec.body})
+				if encErr := json.NewEncoder(w).Encode(ErrorResponse{Error: rec.body}); encErr != nil {
+					log.Printf("failed to encode error response: %v", encErr)
+				}
 			}
 		}()
 
