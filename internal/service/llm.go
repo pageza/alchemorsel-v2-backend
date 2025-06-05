@@ -70,7 +70,15 @@ type Macros struct {
 }
 
 // GenerateRecipe generates a recipe using the DeepSeek API
-func (s *LLMService) GenerateRecipe(query string) (string, error) {
+func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []string) (string, error) {
+	prompt := fmt.Sprintf("Generate a recipe for: %s", query)
+	if len(dietaryPrefs) > 0 {
+		prompt += ". The recipe should be suitable for: " + strings.Join(dietaryPrefs, ", ")
+	}
+	if len(allergens) > 0 {
+		prompt += ". Avoid using: " + strings.Join(allergens, ", ")
+	}
+
 	messages := []Message{
 		{
 			Role: "system",
@@ -100,7 +108,7 @@ func (s *LLMService) GenerateRecipe(query string) (string, error) {
 		},
 		{
 			Role:    "user",
-			Content: fmt.Sprintf("Generate a recipe for: %s", query),
+			Content: prompt,
 		},
 	}
 

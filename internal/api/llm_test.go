@@ -45,6 +45,30 @@ func setupLLMDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(createRecipes).Error; err != nil {
 		t.Fatalf("failed to create recipes table: %v", err)
 	}
+	createPrefs := `CREATE TABLE dietary_preferences (
+          id TEXT PRIMARY KEY,
+          created_at DATETIME,
+          updated_at DATETIME,
+          deleted_at DATETIME,
+          user_id TEXT,
+          preference_type TEXT,
+          custom_name TEXT
+       );`
+	if err := db.Exec(createPrefs).Error; err != nil {
+		t.Fatalf("failed to create dietary_preferences table: %v", err)
+	}
+	createAlls := `CREATE TABLE allergens (
+          id TEXT PRIMARY KEY,
+          created_at DATETIME,
+          updated_at DATETIME,
+          deleted_at DATETIME,
+          user_id TEXT,
+          allergen_name TEXT,
+          severity_level INTEGER
+       );`
+	if err := db.Exec(createAlls).Error; err != nil {
+		t.Fatalf("failed to create allergens table: %v", err)
+	}
 	return db
 }
 
@@ -225,5 +249,58 @@ func TestQueryModifyRecipe(t *testing.T) {
 	}
 	if record.Name != "Updated Recipe" {
 		t.Fatalf("db not updated")
+	}
+}
+
+func TestQueryIncludesPreferences(t *testing.T) {
+	db := setupLLMDB(t)
+
+	var captured string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req service.Request
+		json.NewDecoder(r.Body).Decode(&req)
+		if captured == "" {
+			for _, m := range req.Messages {
+				if m.Role == "user" {
+					captured = m.Content
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"{}"}}]}`)
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
+	t.Setenv("DEEPSEEK_API_URL", ts.URL)
+	authSvc := service.NewAuthService(nil, "secret")
+	handler, err := NewLLMHandler(db, authSvc)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	userID := uuid.New()
+	db.Exec("INSERT INTO dietary_preferences (id, user_id, preference_type) VALUES (?, ?, ?)", uuid.New().String(), userID.String(), "vegan")
+	db.Exec("INSERT INTO allergens (id, user_id, allergen_name, severity_level) VALUES (?, ?, ?, 1)", uuid.New().String(), userID.String(), "peanuts")
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	handler.RegisterRoutes(v1)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": userID.String(),
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	})
+	tokenStr, _ := token.SignedString([]byte("secret"))
+
+	body := `{"query":"test","intent":"generate"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if !strings.Contains(captured, "vegan") || !strings.Contains(captured, "peanuts") {
+		t.Fatalf("prompt missing preferences: %s", captured)
 	}
 }

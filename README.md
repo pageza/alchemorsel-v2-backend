@@ -113,6 +113,8 @@ It also returns a JWT token on success.
 
 - `q` - search term. When running with Postgres, this uses pgvector to order results by embedding similarity.
 - `category` - filter by category
+- `dietary` - comma-separated dietary preferences to match recipe categories
+- `exclude` - comma-separated allergens or ingredients to omit
 - `POST /api/v1/recipes/:id/favorite` - add a recipe to the authenticated user's favorites
 - `DELETE /api/v1/recipes/:id/favorite` - remove a recipe from the authenticated user's favorites
 
@@ -123,6 +125,8 @@ Favorites are stored in the `recipe_favorites` table created by the database mig
 `POST /api/v1/llm/query` generates a recipe using the language model. This route
 requires a valid `Authorization` header with a bearer token. The response
 includes the persisted recipe with the authenticated user ID attached.
+The generated recipe respects the user's saved dietary preferences and
+allergens.
 
 ## Contributing
 
