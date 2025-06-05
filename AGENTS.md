@@ -34,7 +34,11 @@
 
 ## 🔐 Security Practices
 - Regularly run `gosec` to detect security issues.
-- Avoid hardcoding secrets; use environment variables or secret management tools.
+- STRICTLY PROHIBITED: Do not use .env files or hardcoded secrets in the codebase.
+- All secrets MUST be managed through Docker Secrets:
+  - Store secrets in `/run/secrets/` within containers
+  - Use `docker-compose.yml` to define and mount secrets
+  - Access secrets via file system in the application
 - Validate all inputs to prevent injection attacks.
 - Use HTTPS for all external communications.
 - Keep dependencies up to date to mitigate known vulnerabilities.
@@ -53,6 +57,19 @@
 - Multi-stage builds to minimize image size.
 - Expose necessary ports (e.g., 8080).
 - Use non-root user for running the application.
+- Secrets Management:
+  - Define all secrets in `docker-compose.yml`
+  - Mount secrets at `/run/secrets/`
+  - Never commit secret files to version control
+  - Use Docker Swarm or Kubernetes secrets for production
+  - Example secret configuration:
+    ```yaml
+    secrets:
+      db_password:
+        file: ./secrets/db_password.txt
+      api_key:
+        file: ./secrets/api_key.txt
+    ```
 
 ## 🚀 Deployment
 - Deploy using Kubernetes manifests located in `/deploy/k8s`.
