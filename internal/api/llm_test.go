@@ -35,6 +35,7 @@ func setupLLMDB(t *testing.T) *gorm.DB {
            image_url TEXT,
            ingredients TEXT,
            instructions TEXT,
+           embedding TEXT,
            user_id TEXT
    );`
 	if err := db.Exec(createRecipes).Error; err != nil {

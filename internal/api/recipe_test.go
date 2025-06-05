@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -31,6 +32,7 @@ func setupRecipeTestDB(t *testing.T) *gorm.DB {
                image_url TEXT,
                ingredients TEXT,
                instructions TEXT,
+               embedding TEXT,
                user_id TEXT
        );`
 	if err := db.Exec(createRecipes).Error; err != nil {
@@ -57,6 +59,7 @@ func TestFavoriteRecipe(t *testing.T) {
 	recipe := model.Recipe{
 		ID:           uuid.New(),
 		Name:         "Test",
+		Embedding:    service.GenerateEmbedding("Test"),
 		Ingredients:  model.JSONBStringArray{},
 		Instructions: model.JSONBStringArray{},
 		UserID:       uuid.New(),
@@ -88,6 +91,7 @@ func TestUnfavoriteRecipe(t *testing.T) {
 	recipe := model.Recipe{
 		ID:           uuid.New(),
 		Name:         "Test",
+		Embedding:    service.GenerateEmbedding("Test"),
 		Ingredients:  model.JSONBStringArray{},
 		Instructions: model.JSONBStringArray{},
 		UserID:       uuid.New(),
@@ -125,6 +129,7 @@ func TestListRecipesFilters(t *testing.T) {
 		Category:     "Italian",
 		Ingredients:  model.JSONBStringArray{},
 		Instructions: model.JSONBStringArray{},
+		Embedding:    service.GenerateEmbedding("Pasta Tasty pasta dish"),
 		UserID:       uuid.New(),
 	}
 	r2 := model.Recipe{
@@ -134,6 +139,7 @@ func TestListRecipesFilters(t *testing.T) {
 		Category:     "Healthy",
 		Ingredients:  model.JSONBStringArray{},
 		Instructions: model.JSONBStringArray{},
+		Embedding:    service.GenerateEmbedding("Salad Healthy salad"),
 		UserID:       uuid.New(),
 	}
 	r3 := model.Recipe{
@@ -143,6 +149,7 @@ func TestListRecipesFilters(t *testing.T) {
 		Category:     "Italian",
 		Ingredients:  model.JSONBStringArray{},
 		Instructions: model.JSONBStringArray{},
+		Embedding:    service.GenerateEmbedding("Pasta Carbonara Creamy"),
 		UserID:       uuid.New(),
 	}
 	db.Create(&r1)
