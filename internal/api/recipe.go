@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
@@ -45,8 +46,10 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 
 	if search := c.Query("q"); search != "" {
 		if h.db.Dialector.Name() == "postgres" {
-			like := "%" + search + "%"
-			query = query.Where("name ILIKE ? OR description ILIKE ?", like, like)
+			vec := service.GenerateEmbedding(search)
+			query = query.Clauses(clause.OrderBy{
+				Expression: clause.Expr{SQL: "embedding <-> ?", Vars: []interface{}{vec}},
+			})
 		} else {
 			like := "%" + strings.ToLower(search) + "%"
 			query = query.Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ?", like, like)
@@ -97,6 +100,9 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 	// Set the user ID on the recipe
 	recipe.UserID = userID.(uuid.UUID)
 
+	// generate embedding
+	recipe.Embedding = service.GenerateEmbedding(recipe.Name + " " + recipe.Description)
+
 	result := h.db.Create(&recipe)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create recipe"})
@@ -114,6 +120,7 @@ func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 		return
 	}
 
+	recipe.Embedding = service.GenerateEmbedding(recipe.Name + " " + recipe.Description)
 	result := h.db.Model(&model.Recipe{}).Where("id = ?", id).Updates(recipe)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update recipe"})

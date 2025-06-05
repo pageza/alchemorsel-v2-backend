@@ -109,9 +109,9 @@ It also returns a JWT token on success.
 
 ### Recipes Endpoint
 
-`GET /api/v1/recipes` supports optional query parameters:
+-`GET /api/v1/recipes` supports optional query parameters:
 
-- `q` - search term matched against recipe name and description
+- `q` - search term. When running with Postgres, this uses pgvector to order results by embedding similarity.
 - `category` - filter by category
 - `POST /api/v1/recipes/:id/favorite` - add a recipe to the authenticated user's favorites
 - `DELETE /api/v1/recipes/:id/favorite` - remove a recipe from the authenticated user's favorites

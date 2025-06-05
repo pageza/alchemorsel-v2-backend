@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	pgvector "github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
 )
 
@@ -51,5 +52,6 @@ type Recipe struct {
 	ImageURL     string           `gorm:"size:255" json:"image_url"`
 	Ingredients  JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"ingredients"`
 	Instructions JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"instructions"`
+	Embedding    pgvector.Vector  `gorm:"type:vector(3)" json:"-"`
 	UserID       uuid.UUID        `gorm:"type:uuid;not null" json:"user_id"`
 }

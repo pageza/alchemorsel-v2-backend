@@ -104,6 +104,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		Ingredients:  model.JSONBStringArray(recipeData.Ingredients),
 		Instructions: model.JSONBStringArray(recipeData.Instructions),
 		UserID:       userID,
+		Embedding:    service.GenerateEmbedding(recipeData.Name + " " + recipeData.Description),
 	}
 
 	// Persist the recipe
