@@ -143,3 +143,83 @@ func TestQueryUnauthorized(t *testing.T) {
 		t.Fatalf("expected status %d got %d", http.StatusUnauthorized, w.Code)
 	}
 }
+
+func TestQueryModifyRecipe(t *testing.T) {
+	db := setupLLMDB(t)
+
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"name\":\"Updated Recipe\",\"description\":\"New Desc\",\"category\":\"NewCat\",\"ingredients\":[\"i2\"],\"instructions\":[\"s2\"]}"}}]}`)
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEEPSEEK_API_URL", ts.URL)
+	authSvc := service.NewAuthService(nil, "secret")
+	handler, err := NewLLMHandler(db, authSvc)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	handler.RegisterRoutes(v1)
+
+	userID := uuid.New()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": userID.String(),
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	})
+	tokenStr, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		t.Fatalf("failed to sign token: %v", err)
+	}
+
+	orig := model.Recipe{
+		ID:           uuid.New(),
+		Name:         "Old",
+		Description:  "Old",
+		Category:     "Cat",
+		Ingredients:  model.JSONBStringArray{"x"},
+		Instructions: model.JSONBStringArray{"y"},
+		UserID:       userID,
+		Embedding:    service.GenerateEmbedding("Old Old"),
+	}
+	if err := db.Create(&orig).Error; err != nil {
+		t.Fatalf("failed to seed recipe: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"query":"change it","intent":"modify","recipe_id":"%s"}`, orig.ID)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Recipe model.Recipe `json:"recipe"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp.Recipe.ID != orig.ID {
+		t.Fatalf("recipe id changed")
+	}
+	if resp.Recipe.Name != "Updated Recipe" {
+		t.Fatalf("name not updated")
+	}
+
+	var record model.Recipe
+	if err := db.First(&record, "id = ?", orig.ID.String()).Error; err != nil {
+		t.Fatalf("recipe not saved")
+	}
+	if record.Name != "Updated Recipe" {
+		t.Fatalf("db not updated")
+	}
+}
