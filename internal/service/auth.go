@@ -13,6 +13,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var ErrMissingPreferences = errors.New("dietary preferences or allergens required")
+
 type AuthService struct {
 	db        *gorm.DB
 	jwtSecret string
@@ -26,6 +28,9 @@ func NewAuthService(db *gorm.DB, jwtSecret string) *AuthService {
 }
 
 func (s *AuthService) Register(name, email, password, username, dietaryPrefs, allergies string) (string, error) {
+	if dietaryPrefs == "" && allergies == "" {
+		return "", ErrMissingPreferences
+	}
 	// Check if user already exists
 	var existingUser models.User
 	if err := s.db.Where("email = ?", email).First(&existingUser).Error; err == nil {
