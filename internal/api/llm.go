@@ -11,6 +11,7 @@ import (
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
@@ -56,8 +57,39 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		return
 	}
 
+	// Get the authenticated user ID from context
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var prefs []models.DietaryPreference
+	h.db.Where("user_id = ?", userID).Find(&prefs)
+	dietaryList := make([]string, 0, len(prefs))
+	for _, p := range prefs {
+		if p.PreferenceType == "custom" {
+			dietaryList = append(dietaryList, p.CustomName)
+		} else {
+			dietaryList = append(dietaryList, p.PreferenceType)
+		}
+	}
+
+	var alls []models.Allergen
+	h.db.Where("user_id = ?", userID).Find(&alls)
+	allergenList := make([]string, 0, len(alls))
+	for _, a := range alls {
+		allergenList = append(allergenList, a.AllergenName)
+	}
+
 	// Generate recipe using LLM
-	recipeJSON, err := h.llmService.GenerateRecipe(req.Query)
+	recipeJSON, err := h.llmService.GenerateRecipe(req.Query, dietaryList, allergenList)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate recipe: " + err.Error()})
 		return
@@ -96,19 +128,6 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			recipeData.Carbs = macros.Carbs
 			recipeData.Fat = macros.Fat
 		}
-	}
-
-	// Get the authenticated user ID from context
-	userIDVal, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
-	}
-
-	userID, ok := userIDVal.(uuid.UUID)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
 	}
 
 	if req.Intent == "modify" {

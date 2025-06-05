@@ -131,7 +131,7 @@ func TestListRecipesFilters(t *testing.T) {
 		Name:         "Pasta",
 		Description:  "Tasty pasta dish",
 		Category:     "Italian",
-		Ingredients:  model.JSONBStringArray{},
+		Ingredients:  model.JSONBStringArray{"pasta", "peanuts"},
 		Instructions: model.JSONBStringArray{},
 		Embedding:    service.GenerateEmbedding("Pasta Tasty pasta dish"),
 		UserID:       uuid.New(),
@@ -141,7 +141,7 @@ func TestListRecipesFilters(t *testing.T) {
 		Name:         "Salad",
 		Description:  "Healthy salad",
 		Category:     "Healthy",
-		Ingredients:  model.JSONBStringArray{},
+		Ingredients:  model.JSONBStringArray{"lettuce"},
 		Instructions: model.JSONBStringArray{},
 		Embedding:    service.GenerateEmbedding("Salad Healthy salad"),
 		UserID:       uuid.New(),
@@ -151,14 +151,25 @@ func TestListRecipesFilters(t *testing.T) {
 		Name:         "Pasta Carbonara",
 		Description:  "Creamy",
 		Category:     "Italian",
-		Ingredients:  model.JSONBStringArray{},
+		Ingredients:  model.JSONBStringArray{"bacon"},
 		Instructions: model.JSONBStringArray{},
 		Embedding:    service.GenerateEmbedding("Pasta Carbonara Creamy"),
+		UserID:       uuid.New(),
+	}
+	r4 := model.Recipe{
+		ID:           uuid.New(),
+		Name:         "Tofu Bowl",
+		Description:  "Vegan meal",
+		Category:     "Vegan",
+		Ingredients:  model.JSONBStringArray{"tofu", "rice"},
+		Instructions: model.JSONBStringArray{},
+		Embedding:    service.GenerateEmbedding("Tofu Bowl Vegan meal"),
 		UserID:       uuid.New(),
 	}
 	db.Create(&r1)
 	db.Create(&r2)
 	db.Create(&r3)
+	db.Create(&r4)
 
 	// search by q
 	w := httptest.NewRecorder()
@@ -194,5 +205,41 @@ func TestListRecipesFilters(t *testing.T) {
 	}
 	if len(resp.Recipes) != 1 {
 		t.Fatalf("expected 1 recipe got %d", len(resp.Recipes))
+	}
+
+	// filter by dietary preference
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?dietary=vegan", nil)
+	handler.ListRecipes(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+	resp = struct {
+		Recipes []model.Recipe `json:"recipes"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Recipes) != 1 {
+		t.Fatalf("expected 1 recipe got %d", len(resp.Recipes))
+	}
+
+	// exclude allergen
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?exclude=peanuts", nil)
+	handler.ListRecipes(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+	resp = struct {
+		Recipes []model.Recipe `json:"recipes"`
+	}{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Recipes) != 3 {
+		t.Fatalf("expected 3 recipes got %d", len(resp.Recipes))
 	}
 }

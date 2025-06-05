@@ -63,6 +63,24 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 		query = query.Where("category = ?", category)
 	}
 
+	if prefs := c.Query("dietary"); prefs != "" {
+		for _, p := range strings.Split(prefs, ",") {
+			like := "%" + strings.ToLower(strings.TrimSpace(p)) + "%"
+			query = query.Where("LOWER(category) LIKE ?", like)
+		}
+	}
+
+	if ex := c.Query("exclude"); ex != "" {
+		for _, a := range strings.Split(ex, ",") {
+			like := "%" + strings.ToLower(strings.TrimSpace(a)) + "%"
+			if h.db.Dialector.Name() == "postgres" {
+				query = query.Where("LOWER(ingredients::text) NOT LIKE ?", like)
+			} else {
+				query = query.Where("LOWER(ingredients) NOT LIKE ?", like)
+			}
+		}
+	}
+
 	result := query.Find(&recipes)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch recipes"})
