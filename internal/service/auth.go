@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -24,7 +25,7 @@ func NewAuthService(db *gorm.DB, jwtSecret string) *AuthService {
 	}
 }
 
-func (s *AuthService) Register(name, email, password string) (string, error) {
+func (s *AuthService) Register(name, email, password, username, dietaryPrefs, allergies string) (string, error) {
 	// Check if user already exists
 	var existingUser models.User
 	if err := s.db.Where("email = ?", email).First(&existingUser).Error; err == nil {
@@ -46,6 +47,53 @@ func (s *AuthService) Register(name, email, password string) (string, error) {
 
 	if err := s.db.Create(&user).Error; err != nil {
 		return "", err
+	}
+
+	// Create user profile
+	profile := models.UserProfile{
+		UserID:   user.ID,
+		Username: username,
+		Email:    email,
+	}
+	if err := s.db.Create(&profile).Error; err != nil {
+		return "", err
+	}
+
+	// Insert dietary preferences
+	if dietaryPrefs != "" {
+		prefs := strings.Split(dietaryPrefs, ",")
+		for _, p := range prefs {
+			pref := strings.TrimSpace(p)
+			if pref == "" {
+				continue
+			}
+			dp := models.DietaryPreference{
+				UserID:         user.ID,
+				PreferenceType: pref,
+			}
+			if err := s.db.Create(&dp).Error; err != nil {
+				return "", err
+			}
+		}
+	}
+
+	// Insert allergens
+	if allergies != "" {
+		alls := strings.Split(allergies, ",")
+		for _, a := range alls {
+			all := strings.TrimSpace(a)
+			if all == "" {
+				continue
+			}
+			record := models.Allergen{
+				UserID:        user.ID,
+				AllergenName:  all,
+				SeverityLevel: 1,
+			}
+			if err := s.db.Create(&record).Error; err != nil {
+				return "", err
+			}
+		}
 	}
 
 	// Generate JWT token
