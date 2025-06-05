@@ -74,6 +74,10 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		CookTime     string   `json:"cook_time"`
 		Servings     string   `json:"servings"`
 		Difficulty   string   `json:"difficulty"`
+		Calories     float64  `json:"calories"`
+		Protein      float64  `json:"protein"`
+		Carbs        float64  `json:"carbs"`
+		Fat          float64  `json:"fat"`
 	}
 
 	var recipeData RecipeData
@@ -81,6 +85,17 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		log.Printf("Failed to unmarshal recipe JSON: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse recipe: " + err.Error()})
 		return
+	}
+
+	// If macros are missing try to calculate them using the LLM
+	if recipeData.Calories == 0 && recipeData.Protein == 0 && recipeData.Carbs == 0 && recipeData.Fat == 0 {
+		macros, err := h.llmService.CalculateMacros(recipeData.Ingredients)
+		if err == nil && macros != nil {
+			recipeData.Calories = macros.Calories
+			recipeData.Protein = macros.Protein
+			recipeData.Carbs = macros.Carbs
+			recipeData.Fat = macros.Fat
+		}
 	}
 
 	// Get the authenticated user ID from context
@@ -119,6 +134,19 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		existing.Ingredients = model.JSONBStringArray(recipeData.Ingredients)
 		existing.Instructions = model.JSONBStringArray(recipeData.Instructions)
 		existing.Embedding = service.GenerateEmbedding(recipeData.Name + " " + recipeData.Description)
+		if recipeData.Calories == 0 && recipeData.Protein == 0 && recipeData.Carbs == 0 && recipeData.Fat == 0 {
+			macros, err := h.llmService.CalculateMacros(recipeData.Ingredients)
+			if err == nil && macros != nil {
+				recipeData.Calories = macros.Calories
+				recipeData.Protein = macros.Protein
+				recipeData.Carbs = macros.Carbs
+				recipeData.Fat = macros.Fat
+			}
+		}
+		existing.Calories = recipeData.Calories
+		existing.Protein = recipeData.Protein
+		existing.Carbs = recipeData.Carbs
+		existing.Fat = recipeData.Fat
 
 		if err := h.db.Save(&existing).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save recipe"})
@@ -137,6 +165,10 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		Category:     recipeData.Category,
 		Ingredients:  model.JSONBStringArray(recipeData.Ingredients),
 		Instructions: model.JSONBStringArray(recipeData.Instructions),
+		Calories:     recipeData.Calories,
+		Protein:      recipeData.Protein,
+		Carbs:        recipeData.Carbs,
+		Fat:          recipeData.Fat,
 		UserID:       userID,
 		Embedding:    service.GenerateEmbedding(recipeData.Name + " " + recipeData.Description),
 	}

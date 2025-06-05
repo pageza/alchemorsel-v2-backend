@@ -35,6 +35,10 @@ func setupLLMDB(t *testing.T) *gorm.DB {
            image_url TEXT,
            ingredients TEXT,
            instructions TEXT,
+           calories REAL,
+           protein REAL,
+           carbs REAL,
+           fat REAL,
            embedding TEXT,
            user_id TEXT
    );`

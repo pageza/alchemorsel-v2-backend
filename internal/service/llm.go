@@ -61,12 +61,20 @@ type Request struct {
 	ResponseFormat map[string]string `json:"response_format"`
 }
 
+// Macros represents nutritional macros information
+type Macros struct {
+	Calories float64 `json:"calories"`
+	Protein  float64 `json:"protein"`
+	Carbs    float64 `json:"carbs"`
+	Fat      float64 `json:"fat"`
+}
+
 // GenerateRecipe generates a recipe using the DeepSeek API
 func (s *LLMService) GenerateRecipe(query string) (string, error) {
 	messages := []Message{
 		{
 			Role: "system",
-			Content: `You are a professional chef. Please provide your response in JSON format with the following structure:
+			Content: `You are a professional chef and nutritionist. Please provide your response in JSON format with the following structure:
 {
     "name": "Recipe name",
     "description": "Brief description of the recipe",
@@ -83,7 +91,11 @@ func (s *LLMService) GenerateRecipe(query string) (string, error) {
     "prep_time": "Preparation time",
     "cook_time": "Cooking time",
     "servings": "Number of servings",
-    "difficulty": "Easy/Medium/Hard"
+    "difficulty": "Easy/Medium/Hard",
+    "calories": "Approx calories per serving",
+    "protein": "Protein grams per serving",
+    "carbs": "Carbs grams per serving",
+    "fat": "Fat grams per serving"
 }`,
 		},
 		{
@@ -143,4 +155,76 @@ func (s *LLMService) GenerateRecipe(query string) (string, error) {
 	}
 
 	return result.Choices[0].Message.Content, nil
+}
+
+// CalculateMacros estimates the macronutrients for a set of ingredients
+func (s *LLMService) CalculateMacros(ingredients []string) (*Macros, error) {
+	prompt := "Provide an approximate macronutrient breakdown as JSON with fields calories, protein, carbs and fat for the following ingredients:" + "\n" + strings.Join(ingredients, "\n")
+	messages := []Message{
+		{
+			Role:    "system",
+			Content: "You are a nutrition expert. Respond only with JSON like {\"calories\":0,\"protein\":0,\"carbs\":0,\"fat\":0}",
+		},
+		{
+			Role:    "user",
+			Content: prompt,
+		},
+	}
+
+	reqBody := Request{
+		Model:    "deepseek-chat",
+		Messages: messages,
+		ResponseFormat: map[string]string{
+			"type": "json_object",
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", s.apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("no response from API")
+	}
+
+	var macros Macros
+	if err := json.Unmarshal([]byte(result.Choices[0].Message.Content), &macros); err != nil {
+		return nil, fmt.Errorf("failed to parse macros: %w", err)
+	}
+
+	return &macros, nil
 }
