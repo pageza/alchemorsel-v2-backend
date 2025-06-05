@@ -21,6 +21,9 @@ type RegisterRequest struct {
 	Name     string `json:"name" binding:"required"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required"`
+	DietaryPreferences string `json:"dietary_preferences"`
+	Allergies string `json:"allergies"`
 }
 
 type LoginRequest struct {
