@@ -142,3 +142,76 @@ func TestQueryUnauthorized(t *testing.T) {
 		t.Fatalf("expected status %d got %d", http.StatusUnauthorized, w.Code)
 	}
 }
+
+func TestQueryModifyRecipe(t *testing.T) {
+	db := setupLLMDB(t)
+
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"name\":\"Updated\",\"description\":\"new\",\"category\":\"Cat\",\"ingredients\":[\"i1\"],\"instructions\":[\"s1\"]}"}}]}`)
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEEPSEEK_API_URL", ts.URL)
+	authSvc := service.NewAuthService(nil, "secret")
+	handler, err := NewLLMHandler(db, authSvc)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	handler.RegisterRoutes(v1)
+
+	userID := uuid.New()
+	recipe := model.Recipe{
+		ID:           uuid.New(),
+		Name:         "Old",
+		Description:  "old",
+		Category:     "Cat",
+		Ingredients:  model.JSONBStringArray{"old"},
+		Instructions: model.JSONBStringArray{"old"},
+		UserID:       userID,
+	}
+	db.Create(&recipe)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": userID.String(),
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	})
+	tokenStr, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		t.Fatalf("failed to sign token: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"query":"less sugar","intent":"modify","recipe_id":"%s"}`, recipe.ID.String())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Recipe model.Recipe `json:"recipe"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp.Recipe.Name != "Updated" {
+		t.Fatalf("recipe not modified")
+	}
+
+	var record model.Recipe
+	if err := db.First(&record, "id = ?", recipe.ID.String()).Error; err != nil {
+		t.Fatalf("recipe not saved")
+	}
+	if record.Name != "Updated" {
+		t.Fatalf("db not updated")
+	}
+}

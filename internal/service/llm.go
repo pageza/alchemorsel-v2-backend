@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 )
 
 // LLMService handles interactions with the DeepSeek API
@@ -89,6 +91,102 @@ func (s *LLMService) GenerateRecipe(query string) (string, error) {
 		{
 			Role:    "user",
 			Content: fmt.Sprintf("Generate a recipe for: %s", query),
+		},
+	}
+
+	reqBody := Request{
+		Model:    "deepseek-chat",
+		Messages: messages,
+		ResponseFormat: map[string]string{
+			"type": "json_object",
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", s.apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("no response from API")
+	}
+
+	return result.Choices[0].Message.Content, nil
+}
+
+// ModifyRecipe sends a recipe and modification instructions to the DeepSeek API
+// and returns the modified recipe JSON.
+func (s *LLMService) ModifyRecipe(recipe model.Recipe, modifications string) (string, error) {
+	type recipeData struct {
+		Name         string   `json:"name"`
+		Description  string   `json:"description"`
+		Category     string   `json:"category"`
+		Ingredients  []string `json:"ingredients"`
+		Instructions []string `json:"instructions"`
+		PrepTime     string   `json:"prep_time"`
+		CookTime     string   `json:"cook_time"`
+		Servings     string   `json:"servings"`
+		Difficulty   string   `json:"difficulty"`
+	}
+
+	data := recipeData{
+		Name:         recipe.Name,
+		Description:  recipe.Description,
+		Category:     recipe.Category,
+		Ingredients:  []string(recipe.Ingredients),
+		Instructions: []string(recipe.Instructions),
+	}
+
+	existingJSON, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal recipe: %w", err)
+	}
+
+	messages := []Message{
+		{
+			Role:    "system",
+			Content: `You are a professional chef. Modify the provided recipe according to the user's request. Respond in JSON format with the same structure as the input recipe.`,
+		},
+		{
+			Role:    "assistant",
+			Content: string(existingJSON),
+		},
+		{
+			Role:    "user",
+			Content: modifications,
 		},
 	}
 

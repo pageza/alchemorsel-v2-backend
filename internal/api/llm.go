@@ -46,8 +46,9 @@ func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 // Query handles LLM query requests
 func (h *LLMHandler) Query(c *gin.Context) {
 	var req struct {
-		Query  string `json:"query" binding:"required"`
-		Intent string `json:"intent" binding:"required"`
+		Query    string `json:"query" binding:"required"`
+		Intent   string `json:"intent" binding:"required"`
+		RecipeID string `json:"recipe_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -55,11 +56,49 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		return
 	}
 
-	// Generate recipe using LLM
-	recipeJSON, err := h.llmService.GenerateRecipe(req.Query)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate recipe: " + err.Error()})
+	// Get the authenticated user ID from context
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var recipeJSON string
+	var err error
+	var recipe model.Recipe
+
+	if req.Intent == "modify" {
+		if req.RecipeID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "recipe_id required"})
+			return
+		}
+		rid, err := uuid.Parse(req.RecipeID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe_id"})
+			return
+		}
+		if err := h.db.First(&recipe, "id = ?", rid).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+		recipeJSON, err = h.llmService.ModifyRecipe(recipe, req.Query)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to modify recipe: " + err.Error()})
+			return
+		}
+	} else {
+		recipeJSON, err = h.llmService.GenerateRecipe(req.Query)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate recipe: " + err.Error()})
+			return
+		}
+		recipe = model.Recipe{ID: uuid.New(), UserID: userID}
 	}
 
 	// Parse the JSON response into a recipe struct
@@ -82,37 +121,23 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		return
 	}
 
-	// Get the authenticated user ID from context
-	userIDVal, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
-	}
+	recipe.Name = recipeData.Name
+	recipe.Description = recipeData.Description
+	recipe.Category = recipeData.Category
+	recipe.Ingredients = model.JSONBStringArray(recipeData.Ingredients)
+	recipe.Instructions = model.JSONBStringArray(recipeData.Instructions)
 
-	userID, ok := userIDVal.(uuid.UUID)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
+	if req.Intent == "modify" {
+		if err := h.db.Save(&recipe).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update recipe"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"recipe": recipe})
+	} else {
+		if err := h.db.Create(&recipe).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save recipe"})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"recipe": recipe})
 	}
-
-	// Convert the parsed data into a model.Recipe
-	recipe := model.Recipe{
-		ID:           uuid.New(),
-		Name:         recipeData.Name,
-		Description:  recipeData.Description,
-		Category:     recipeData.Category,
-		Ingredients:  model.JSONBStringArray(recipeData.Ingredients),
-		Instructions: model.JSONBStringArray(recipeData.Instructions),
-		UserID:       userID,
-	}
-
-	// Persist the recipe
-	if err := h.db.Create(&recipe).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save recipe"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"recipe": recipe,
-	})
 }
