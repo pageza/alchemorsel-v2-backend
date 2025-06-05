@@ -73,6 +73,12 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		CookTime     string   `json:"cook_time"`
 		Servings     string   `json:"servings"`
 		Difficulty   string   `json:"difficulty"`
+		Macros       struct {
+			Calories int     `json:"calories"`
+			Protein  float64 `json:"protein"`
+			Fat      float64 `json:"fat"`
+			Carbs    float64 `json:"carbs"`
+		} `json:"macros"`
 	}
 
 	var recipeData RecipeData
@@ -104,6 +110,10 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		Ingredients:  model.JSONBStringArray(recipeData.Ingredients),
 		Instructions: model.JSONBStringArray(recipeData.Instructions),
 		UserID:       userID,
+		Calories:     recipeData.Macros.Calories,
+		Protein:      recipeData.Macros.Protein,
+		Fat:          recipeData.Macros.Fat,
+		Carbs:        recipeData.Macros.Carbs,
 	}
 
 	// Persist the recipe

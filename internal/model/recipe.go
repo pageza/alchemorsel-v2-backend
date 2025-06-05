@@ -52,4 +52,8 @@ type Recipe struct {
 	Ingredients  JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"ingredients"`
 	Instructions JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"instructions"`
 	UserID       uuid.UUID        `gorm:"type:uuid;not null" json:"user_id"`
+	Calories     int              `gorm:"default:0" json:"calories"`
+	Protein      float64          `gorm:"default:0" json:"protein"`
+	Fat          float64          `gorm:"default:0" json:"fat"`
+	Carbs        float64          `gorm:"default:0" json:"carbs"`
 }

@@ -35,7 +35,11 @@ func setupLLMDB(t *testing.T) *gorm.DB {
            image_url TEXT,
            ingredients TEXT,
            instructions TEXT,
-           user_id TEXT
+           user_id TEXT,
+           calories INTEGER,
+           protein REAL,
+           fat REAL,
+           carbs REAL
    );`
 	if err := db.Exec(createRecipes).Error; err != nil {
 		t.Fatalf("failed to create recipes table: %v", err)
@@ -50,7 +54,7 @@ func TestQuerySavesRecipe(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"name\":\"Mock Recipe\",\"description\":\"Desc\",\"category\":\"Cat\",\"ingredients\":[\"i1\"],\"instructions\":[\"s1\"]}"}}]}`)
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"name\":\"Mock Recipe\",\"description\":\"Desc\",\"category\":\"Cat\",\"ingredients\":[\"i1\"],\"instructions\":[\"s1\"],\"macros\":{\"calories\":10,\"protein\":1,\"fat\":2,\"carbs\":3}}"}}]}`)
 	}))
 	defer ts.Close()
 

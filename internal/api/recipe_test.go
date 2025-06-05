@@ -31,7 +31,11 @@ func setupRecipeTestDB(t *testing.T) *gorm.DB {
                image_url TEXT,
                ingredients TEXT,
                instructions TEXT,
-               user_id TEXT
+               user_id TEXT,
+               calories INTEGER,
+               protein REAL,
+               fat REAL,
+               carbs REAL
        );`
 	if err := db.Exec(createRecipes).Error; err != nil {
 		t.Fatalf("failed to create recipes table: %v", err)
@@ -52,7 +56,11 @@ func setupRecipeTestDB(t *testing.T) *gorm.DB {
 
 func TestFavoriteRecipe(t *testing.T) {
 	db := setupRecipeTestDB(t)
-	handler := NewRecipeHandler(db, nil)
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
+	handler, err := NewRecipeHandler(db, nil)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
 
 	recipe := model.Recipe{
 		ID:           uuid.New(),
@@ -83,7 +91,11 @@ func TestFavoriteRecipe(t *testing.T) {
 
 func TestUnfavoriteRecipe(t *testing.T) {
 	db := setupRecipeTestDB(t)
-	handler := NewRecipeHandler(db, nil)
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
+	handler, err := NewRecipeHandler(db, nil)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
 
 	recipe := model.Recipe{
 		ID:           uuid.New(),
@@ -116,7 +128,11 @@ func TestUnfavoriteRecipe(t *testing.T) {
 
 func TestListRecipesFilters(t *testing.T) {
 	db := setupRecipeTestDB(t)
-	handler := NewRecipeHandler(db, nil)
+	t.Setenv("DEEPSEEK_API_KEY", "dummy")
+	handler, err := NewRecipeHandler(db, nil)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
 
 	r1 := model.Recipe{
 		ID:           uuid.New(),

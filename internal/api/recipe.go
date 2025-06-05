@@ -16,13 +16,19 @@ import (
 type RecipeHandler struct {
 	db          *gorm.DB
 	authService *service.AuthService
+	llmService  *service.LLMService
 }
 
-func NewRecipeHandler(db *gorm.DB, authService *service.AuthService) *RecipeHandler {
+func NewRecipeHandler(db *gorm.DB, authService *service.AuthService) (*RecipeHandler, error) {
+	llmSvc, err := service.NewLLMService()
+	if err != nil {
+		return nil, err
+	}
 	return &RecipeHandler{
 		db:          db,
 		authService: authService,
-	}
+		llmService:  llmSvc,
+	}, nil
 }
 
 func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
@@ -97,6 +103,16 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 	// Set the user ID on the recipe
 	recipe.UserID = userID.(uuid.UUID)
 
+	// Calculate macros if not provided
+	if recipe.Calories == 0 && len(recipe.Ingredients) > 0 {
+		if macros, err := h.llmService.CalculateMacros([]string(recipe.Ingredients)); err == nil {
+			recipe.Calories = macros.Calories
+			recipe.Protein = macros.Protein
+			recipe.Fat = macros.Fat
+			recipe.Carbs = macros.Carbs
+		}
+	}
+
 	result := h.db.Create(&recipe)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create recipe"})
@@ -112,6 +128,15 @@ func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 	if err := c.ShouldBindJSON(&recipe); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if len(recipe.Ingredients) > 0 {
+		if macros, err := h.llmService.CalculateMacros([]string(recipe.Ingredients)); err == nil {
+			recipe.Calories = macros.Calories
+			recipe.Protein = macros.Protein
+			recipe.Fat = macros.Fat
+			recipe.Carbs = macros.Carbs
+		}
 	}
 
 	result := h.db.Model(&model.Recipe{}).Where("id = ?", id).Updates(recipe)

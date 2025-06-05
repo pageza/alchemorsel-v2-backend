@@ -57,7 +57,10 @@ func (s *Server) Start(cfg *config.Config) error {
 	// Initialize handlers
 	profileHandler := api.NewProfileHandler(profileService)
 	authHandler := api.NewAuthHandler(authService)
-	recipeHandler := api.NewRecipeHandler(s.db, authService)
+	recipeHandler, err := api.NewRecipeHandler(s.db, authService)
+	if err != nil {
+		return fmt.Errorf("failed to create recipe handler: %w", err)
+	}
 
 	llmHandler, err := api.NewLLMHandler(s.db, authService)
 	if err != nil {

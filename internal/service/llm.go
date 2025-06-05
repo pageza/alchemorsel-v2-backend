@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 )
 
 // LLMService handles interactions with the DeepSeek API
@@ -83,7 +85,13 @@ func (s *LLMService) GenerateRecipe(query string) (string, error) {
     "prep_time": "Preparation time",
     "cook_time": "Cooking time",
     "servings": "Number of servings",
-    "difficulty": "Easy/Medium/Hard"
+    "difficulty": "Easy/Medium/Hard",
+    "macros": {
+        "calories": 0,
+        "protein": 0,
+        "fat": 0,
+        "carbs": 0
+    }
 }`,
 		},
 		{
@@ -143,4 +151,73 @@ func (s *LLMService) GenerateRecipe(query string) (string, error) {
 	}
 
 	return result.Choices[0].Message.Content, nil
+}
+
+// CalculateMacros uses the LLM to estimate nutritional macros for a list of ingredients.
+func (s *LLMService) CalculateMacros(ingredients []string) (*model.Macros, error) {
+	messages := []Message{
+		{
+			Role:    "system",
+			Content: `You are a nutritionist. Given a list of ingredients, provide the total calories, protein, fat and carbs in grams as JSON in the form {"calories":0,"protein":0,"fat":0,"carbs":0}.`,
+		},
+		{
+			Role:    "user",
+			Content: strings.Join(ingredients, ", "),
+		},
+	}
+
+	reqBody := Request{
+		Model:    "deepseek-chat",
+		Messages: messages,
+		ResponseFormat: map[string]string{
+			"type": "json_object",
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", s.apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("no response from API")
+	}
+
+	var macros model.Macros
+	if err := json.Unmarshal([]byte(result.Choices[0].Message.Content), &macros); err != nil {
+		return nil, fmt.Errorf("failed to parse macros: %w", err)
+	}
+	return &macros, nil
 }
