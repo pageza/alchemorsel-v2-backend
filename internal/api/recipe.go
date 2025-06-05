@@ -17,12 +17,15 @@ import (
 type RecipeHandler struct {
 	db          *gorm.DB
 	authService *service.AuthService
+	llmService  *service.LLMService
 }
 
 func NewRecipeHandler(db *gorm.DB, authService *service.AuthService) *RecipeHandler {
+	llmService, _ := service.NewLLMService()
 	return &RecipeHandler{
 		db:          db,
 		authService: authService,
+		llmService:  llmService,
 	}
 }
 
@@ -100,6 +103,19 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 	// Set the user ID on the recipe
 	recipe.UserID = userID.(uuid.UUID)
 
+	// calculate macros if not provided
+	if recipe.Calories == 0 && recipe.Protein == 0 && recipe.Carbs == 0 && recipe.Fat == 0 {
+		if h.llmService != nil {
+			macros, err := h.llmService.CalculateMacros([]string(recipe.Ingredients))
+			if err == nil && macros != nil {
+				recipe.Calories = macros.Calories
+				recipe.Protein = macros.Protein
+				recipe.Carbs = macros.Carbs
+				recipe.Fat = macros.Fat
+			}
+		}
+	}
+
 	// generate embedding
 	recipe.Embedding = service.GenerateEmbedding(recipe.Name + " " + recipe.Description)
 
@@ -118,6 +134,18 @@ func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 	if err := c.ShouldBindJSON(&recipe); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if recipe.Calories == 0 && recipe.Protein == 0 && recipe.Carbs == 0 && recipe.Fat == 0 {
+		if h.llmService != nil {
+			macros, err := h.llmService.CalculateMacros([]string(recipe.Ingredients))
+			if err == nil && macros != nil {
+				recipe.Calories = macros.Calories
+				recipe.Protein = macros.Protein
+				recipe.Carbs = macros.Carbs
+				recipe.Fat = macros.Fat
+			}
+		}
 	}
 
 	recipe.Embedding = service.GenerateEmbedding(recipe.Name + " " + recipe.Description)
