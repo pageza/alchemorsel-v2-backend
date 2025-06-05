@@ -79,6 +79,34 @@ The API documentation is generated using Swagger/OpenAPI. To view the documentat
 1. Start the server
 2. Visit `http://localhost:8080/swagger`
 
+### Auth Endpoints
+
+`POST /api/v1/auth/register` registers a new user. Example payload:
+
+```json
+{
+  "name": "Jane Doe",
+  "email": "jane@example.com",
+  "password": "strongpassword",
+  "username": "janedoe",
+  "dietary_preferences": ["vegan"],
+  "allergies": ["peanuts"]
+}
+```
+
+At least one of `dietary_preferences` or `allergies` must be provided. The response returns a `token` field.
+
+`POST /api/v1/auth/login` accepts:
+
+```json
+{
+  "email": "jane@example.com",
+  "password": "strongpassword"
+}
+```
+
+It also returns a JWT token on success.
+
 ### Recipes Endpoint
 
 `GET /api/v1/recipes` supports optional query parameters:
