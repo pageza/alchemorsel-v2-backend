@@ -26,11 +26,11 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: postgres
-          DB_PASSWORD: postgres
+          DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           DB_NAME: alchemorsel_test
           DB_SSL_MODE: disable
-          JWT_SECRET: testsecret
-          LLM_API_KEY: testkey
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
 
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
