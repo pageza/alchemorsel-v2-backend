@@ -141,7 +141,10 @@ func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []stri
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("failed to read error response: %w", readErr)
+		}
 		log.Printf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
@@ -208,7 +211,10 @@ func (s *LLMService) CalculateMacros(ingredients []string) (*Macros, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read error response: %w", readErr)
+		}
 		log.Printf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
