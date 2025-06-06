@@ -10,7 +10,7 @@ END;
 $$ language 'plpgsql';
 
 -- Create users table
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -26,7 +26,7 @@ CREATE TRIGGER update_users_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Create user profiles table
-CREATE TABLE user_profiles (
+CREATE TABLE IF NOT EXISTS user_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -71,7 +71,7 @@ CREATE TRIGGER update_profile_history_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Create recipes table
-CREATE TABLE recipes (
+CREATE TABLE IF NOT EXISTS recipes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -87,12 +87,13 @@ CREATE TABLE recipes (
     difficulty VARCHAR(50),
     category VARCHAR(50),
     cuisine VARCHAR(50),
+    image_url TEXT,
     dietary_preferences JSONB,
     tags JSONB,
     calories INTEGER,
-    protein FLOAT,
-    carbs FLOAT,
-    fat FLOAT,
+    protein DOUBLE PRECISION,
+    carbs DOUBLE PRECISION,
+    fat DOUBLE PRECISION,
     embedding vector(1536)
 );
 
@@ -115,4 +116,13 @@ CREATE TABLE recipe_favorites (
 CREATE TRIGGER update_recipe_favorites_updated_at
     BEFORE UPDATE ON recipe_favorites
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column(); 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_recipes_user_id ON recipes(user_id);
+CREATE INDEX IF NOT EXISTS idx_recipes_category ON recipes(category);
+CREATE INDEX IF NOT EXISTS idx_recipes_cuisine ON recipes(cuisine);
+CREATE INDEX IF NOT EXISTS idx_recipes_difficulty ON recipes(difficulty);
+CREATE INDEX IF NOT EXISTS idx_recipes_tags ON recipes USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_recipes_dietary_preferences ON recipes USING GIN(dietary_preferences);
+CREATE INDEX IF NOT EXISTS idx_recipes_embedding ON recipes USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100); 
