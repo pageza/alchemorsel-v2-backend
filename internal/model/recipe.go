@@ -56,6 +56,6 @@ type Recipe struct {
 	Protein      float64          `gorm:"type:float" json:"protein"`
 	Carbs        float64          `gorm:"type:float" json:"carbs"`
 	Fat          float64          `gorm:"type:float" json:"fat"`
-	Embedding    pgvector.Vector  `gorm:"type:vector(3)" json:"-"`
+	Embedding    pgvector.Vector  `gorm:"type:vector(1536)" json:"-"`
 	UserID       uuid.UUID        `gorm:"type:uuid;not null" json:"user_id"`
 }

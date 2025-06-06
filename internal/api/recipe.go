@@ -6,27 +6,32 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
-	"github.com/pageza/alchemorsel-v2/backend/internal/model"
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 type RecipeHandler struct {
-	db          *gorm.DB
-	authService *service.AuthService
-	llmService  *service.LLMService
+	db               *gorm.DB
+	authService      *service.AuthService
+	llmService       *service.LLMService
+	embeddingService *service.EmbeddingService
 }
 
-func NewRecipeHandler(db *gorm.DB, authService *service.AuthService) *RecipeHandler {
+func NewRecipeHandler(db *gorm.DB, authService *service.AuthService) (*RecipeHandler, error) {
 	llmService, _ := service.NewLLMService()
-	return &RecipeHandler{
-		db:          db,
-		authService: authService,
-		llmService:  llmService,
+	embeddingService, err := service.NewEmbeddingService()
+	if err != nil {
+		return nil, err
 	}
+	return &RecipeHandler{
+		db:               db,
+		authService:      authService,
+		llmService:       llmService,
+		embeddingService: embeddingService,
+	}, nil
 }
 
 func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
@@ -43,19 +48,37 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 }
 
 func (h *RecipeHandler) ListRecipes(c *gin.Context) {
-	var recipes []model.Recipe
+	var recipes []models.Recipe
 
 	query := h.db
 
 	if search := c.Query("q"); search != "" {
 		if h.db.Dialector.Name() == "postgres" {
-			vec := service.GenerateEmbedding(search)
-			query = query.Clauses(clause.OrderBy{
-				Expression: clause.Expr{SQL: "embedding <-> ?", Vars: []interface{}{vec}},
-			})
+			// Generate embedding for semantic search
+			vec, err := h.embeddingService.GenerateEmbedding(search)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate embedding"})
+				return
+			}
+
+			// Combine semantic and keyword search
+			// Use a subquery to get both semantic and keyword matches
+			subQuery := h.db.Model(&models.Recipe{}).
+				Select("id, embedding <-> ? as similarity", vec).
+				Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ? OR LOWER(ingredients::text) LIKE ?",
+					"%"+strings.ToLower(search)+"%",
+					"%"+strings.ToLower(search)+"%",
+					"%"+strings.ToLower(search)+"%",
+				)
+
+			// Join with the main query and order by similarity
+			query = query.Joins("JOIN (?) as search ON recipes.id = search.id", subQuery).
+				Order("search.similarity ASC")
 		} else {
+			// Fallback to keyword search for non-PostgreSQL databases
 			like := "%" + strings.ToLower(search) + "%"
-			query = query.Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ?", like, like)
+			query = query.Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ? OR LOWER(ingredients) LIKE ?",
+				like, like, like)
 		}
 	}
 
@@ -63,10 +86,14 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 		query = query.Where("category = ?", category)
 	}
 
+	if cuisine := c.Query("cuisine"); cuisine != "" {
+		query = query.Where("cuisine = ?", cuisine)
+	}
+
 	if prefs := c.Query("dietary"); prefs != "" {
 		for _, p := range strings.Split(prefs, ",") {
 			like := "%" + strings.ToLower(strings.TrimSpace(p)) + "%"
-			query = query.Where("LOWER(category) LIKE ?", like)
+			query = query.Where("LOWER(dietary_preferences::text) LIKE ?", like)
 		}
 	}
 
@@ -94,7 +121,7 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 
 func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 	id := c.Param("id")
-	var recipe model.Recipe
+	var recipe models.Recipe
 	result := h.db.First(&recipe, "id = ?", id)
 	if result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Recipe not found"})
@@ -105,7 +132,7 @@ func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 }
 
 func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
-	var recipe model.Recipe
+	var recipe models.Recipe
 	if err := c.ShouldBindJSON(&recipe); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -134,8 +161,32 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 		}
 	}
 
-	// generate embedding
-	recipe.Embedding = service.GenerateEmbedding(recipe.Name + " " + recipe.Description)
+	// Generate tags from category, cuisine, and dietary preferences
+	tags := make([]string, 0)
+	if recipe.Category != "" {
+		tags = append(tags, recipe.Category)
+	}
+	if recipe.Cuisine != "" {
+		tags = append(tags, recipe.Cuisine)
+	}
+	if len(recipe.DietaryPreferences) > 0 {
+		tags = append(tags, []string(recipe.DietaryPreferences)...)
+	}
+	recipe.Tags = models.JSONBStringArray(tags)
+
+	// generate embedding with enhanced context
+	embedding, err := h.embeddingService.GenerateEmbeddingFromRecipe(
+		recipe.Name,
+		recipe.Description,
+		recipe.Ingredients,
+		recipe.Category,
+		recipe.DietaryPreferences,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate embedding"})
+		return
+	}
+	recipe.Embedding = embedding
 
 	result := h.db.Create(&recipe)
 	if result.Error != nil {
@@ -148,7 +199,7 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 
 func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 	id := c.Param("id")
-	var recipe model.Recipe
+	var recipe models.Recipe
 	if err := c.ShouldBindJSON(&recipe); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -166,8 +217,21 @@ func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 		}
 	}
 
-	recipe.Embedding = service.GenerateEmbedding(recipe.Name + " " + recipe.Description)
-	result := h.db.Model(&model.Recipe{}).Where("id = ?", id).Updates(recipe)
+	// generate embedding with enhanced context
+	embedding, err := h.embeddingService.GenerateEmbeddingFromRecipe(
+		recipe.Name,
+		recipe.Description,
+		recipe.Ingredients,
+		recipe.Category,
+		recipe.DietaryPreferences,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate embedding"})
+		return
+	}
+	recipe.Embedding = embedding
+
+	result := h.db.Model(&models.Recipe{}).Where("id = ?", id).Updates(recipe)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update recipe"})
 		return
@@ -181,7 +245,7 @@ func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 
 func (h *RecipeHandler) DeleteRecipe(c *gin.Context) {
 	id := c.Param("id")
-	result := h.db.Delete(&model.Recipe{}, "id = ?", id)
+	result := h.db.Delete(&models.Recipe{}, "id = ?", id)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete recipe"})
 		return
@@ -207,7 +271,7 @@ func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
 		return
 	}
 
-	fav := model.RecipeFavorite{
+	fav := models.RecipeFavorite{
 		RecipeID: recipeID,
 		UserID:   userIDVal.(uuid.UUID),
 	}
@@ -236,7 +300,7 @@ func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Where("recipe_id = ? AND user_id = ?", recipeID, userIDVal.(uuid.UUID)).Delete(&model.RecipeFavorite{}).Error; err != nil {
+	if err := h.db.Where("recipe_id = ? AND user_id = ?", recipeID, userIDVal.(uuid.UUID)).Delete(&models.RecipeFavorite{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unfavorite recipe"})
 		return
 	}

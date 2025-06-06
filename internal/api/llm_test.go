@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/model"
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
@@ -116,9 +117,7 @@ func TestQuerySavesRecipe(t *testing.T) {
 		t.Fatalf("expected status %d got %d", http.StatusCreated, w.Code)
 	}
 
-	var resp struct {
-		Recipe model.Recipe `json:"recipe"`
-	}
+	var resp response
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
@@ -130,7 +129,7 @@ func TestQuerySavesRecipe(t *testing.T) {
 		t.Fatalf("user id mismatch")
 	}
 
-	var record model.Recipe
+	var record models.Recipe
 	if err := db.First(&record, "id = ?", resp.Recipe.ID.String()).Error; err != nil {
 		t.Fatalf("recipe not saved")
 	}
@@ -204,7 +203,7 @@ func TestQueryModifyRecipe(t *testing.T) {
 		t.Fatalf("failed to sign token: %v", err)
 	}
 
-	orig := model.Recipe{
+	orig := models.Recipe{
 		ID:           uuid.New(),
 		Name:         "Old",
 		Description:  "Old",
@@ -229,9 +228,7 @@ func TestQueryModifyRecipe(t *testing.T) {
 		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
 	}
 
-	var resp struct {
-		Recipe model.Recipe `json:"recipe"`
-	}
+	var resp response
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
@@ -243,7 +240,7 @@ func TestQueryModifyRecipe(t *testing.T) {
 		t.Fatalf("name not updated")
 	}
 
-	var record model.Recipe
+	var record models.Recipe
 	if err := db.First(&record, "id = ?", orig.ID.String()).Error; err != nil {
 		t.Fatalf("recipe not saved")
 	}
@@ -305,4 +302,8 @@ func TestQueryIncludesPreferences(t *testing.T) {
 	if !strings.Contains(captured, "vegan") || !strings.Contains(captured, "peanuts") {
 		t.Fatalf("prompt missing preferences: %s", captured)
 	}
+}
+
+type response struct {
+	Recipe models.Recipe `json:"recipe"`
 }

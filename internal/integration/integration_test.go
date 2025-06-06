@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/api"
-	"github.com/pageza/alchemorsel-v2/backend/internal/model"
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
@@ -192,7 +192,7 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create recipe failed: %d", w.Code)
 	}
-	var createResp struct{ Recipe model.Recipe }
+	var createResp struct{ Recipe models.Recipe }
 	if err := json.Unmarshal(w.Body.Bytes(), &createResp); err != nil {
 		t.Fatalf("failed to decode create response: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("modify recipe failed: %d", w.Code)
 	}
-	var modResp struct{ Recipe model.Recipe }
+	var modResp struct{ Recipe models.Recipe }
 	if err := json.Unmarshal(w.Body.Bytes(), &modResp); err != nil {
 		t.Fatalf("failed to decode modify response: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 		t.Fatalf("recipe not updated")
 	}
 
-	var rec model.Recipe
+	var rec models.Recipe
 	if err := db.First(&rec, "id = ?", recipeID).Error; err != nil {
 		t.Fatalf("recipe not in db: %v", err)
 	}

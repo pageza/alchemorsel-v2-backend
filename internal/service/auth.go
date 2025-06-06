@@ -28,18 +28,30 @@ func NewAuthService(db *gorm.DB, jwtSecret string) *AuthService {
 }
 
 func (s *AuthService) Register(name, email, password, username, dietaryPrefs, allergies string) (string, error) {
-	if dietaryPrefs == "" && allergies == "" {
-		return "", ErrMissingPreferences
+	// Start a transaction
+	tx := s.db.Begin()
+	if tx.Error != nil {
+		return "", tx.Error
 	}
+
+	// Defer a rollback in case anything fails
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	// Check if user already exists
 	var existingUser models.User
-	if err := s.db.Where("email = ?", email).First(&existingUser).Error; err == nil {
+	if err := tx.Where("email = ?", email).First(&existingUser).Error; err == nil {
+		tx.Rollback()
 		return "", errors.New("user already exists")
 	}
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		tx.Rollback()
 		return "", err
 	}
 
@@ -50,7 +62,8 @@ func (s *AuthService) Register(name, email, password, username, dietaryPrefs, al
 		PasswordHash: string(hashedPassword),
 	}
 
-	if err := s.db.Create(&user).Error; err != nil {
+	if err := tx.Create(&user).Error; err != nil {
+		tx.Rollback()
 		return "", err
 	}
 
@@ -60,11 +73,12 @@ func (s *AuthService) Register(name, email, password, username, dietaryPrefs, al
 		Username: username,
 		Email:    email,
 	}
-	if err := s.db.Create(&profile).Error; err != nil {
+	if err := tx.Create(&profile).Error; err != nil {
+		tx.Rollback()
 		return "", err
 	}
 
-	// Insert dietary preferences
+	// Insert dietary preferences if any
 	if dietaryPrefs != "" {
 		prefs := strings.Split(dietaryPrefs, ",")
 		for _, p := range prefs {
@@ -76,16 +90,20 @@ func (s *AuthService) Register(name, email, password, username, dietaryPrefs, al
 				UserID:         user.ID,
 				PreferenceType: pref,
 			}
+			// Only set CustomName if the preference type is 'custom'
 			if pref == "custom" {
-				dp.CustomName = "Custom Diet" // Default name for custom preferences
+				dp.CustomName = "Custom Diet"
+			} else {
+				dp.CustomName = "" // Ensure it's empty for non-custom preferences
 			}
-			if err := s.db.Create(&dp).Error; err != nil {
+			if err := tx.Create(&dp).Error; err != nil {
+				tx.Rollback()
 				return "", err
 			}
 		}
 	}
 
-	// Insert allergens
+	// Insert allergens if any
 	if allergies != "" {
 		alls := strings.Split(allergies, ",")
 		for _, a := range alls {
@@ -98,7 +116,8 @@ func (s *AuthService) Register(name, email, password, username, dietaryPrefs, al
 				AllergenName:  all,
 				SeverityLevel: 1,
 			}
-			if err := s.db.Create(&record).Error; err != nil {
+			if err := tx.Create(&record).Error; err != nil {
+				tx.Rollback()
 				return "", err
 			}
 		}
@@ -107,6 +126,13 @@ func (s *AuthService) Register(name, email, password, username, dietaryPrefs, al
 	// Generate JWT token
 	token, err := s.generateToken(user.ID)
 	if err != nil {
+		tx.Rollback()
+		return "", err
+	}
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
 		return "", err
 	}
 

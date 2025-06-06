@@ -39,11 +39,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if len(req.DietaryPreferences) == 0 && len(req.Allergies) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "preferences or allergens required"})
-		return
-	}
-
 	dietary := strings.Join(req.DietaryPreferences, ",")
 	allergies := strings.Join(req.Allergies, ",")
 	token, err := h.authService.Register(req.Name, req.Email, req.Password, req.Username, dietary, allergies)
@@ -77,4 +72,9 @@ func (h *AuthHandler) RegisterRoutes(router *gin.RouterGroup) {
 		auth.POST("/register", h.Register)
 		auth.POST("/login", h.Login)
 	}
+}
+
+// GetAuthService returns the auth service instance
+func (h *AuthHandler) GetAuthService() *service.AuthService {
+	return h.authService
 }

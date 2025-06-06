@@ -47,9 +47,9 @@ func (m *MockProfileService) ValidateToken(token string) (*middleware.TokenClaim
 	return args.Get(0).(*middleware.TokenClaims), args.Error(1)
 }
 
-func (m *MockProfileService) GetUserRecipes(userID uuid.UUID) ([]model.Recipe, error) {
+func (m *MockProfileService) GetUserRecipes(userID uuid.UUID) ([]models.Recipe, error) {
 	args := m.Called(userID)
-	return args.Get(0).([]model.Recipe), args.Error(1)
+	return args.Get(0).([]models.Recipe), args.Error(1)
 }
 
 func TestGetProfile(t *testing.T) {
@@ -68,7 +68,7 @@ func TestGetProfile(t *testing.T) {
 	}
 
 	// Mock recipes
-	expectedRecipes := []model.Recipe{
+	expectedRecipes := []models.Recipe{
 		{ID: uuid.New(), Name: "Test", Ingredients: model.JSONBStringArray{}, Instructions: model.JSONBStringArray{}, UserID: testUUID},
 	}
 
@@ -91,7 +91,7 @@ func TestGetProfile(t *testing.T) {
 
 	var resp struct {
 		Profile models.UserProfile `json:"profile"`
-		Recipes []model.Recipe     `json:"recipes"`
+		Recipes []models.Recipe    `json:"recipes"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)

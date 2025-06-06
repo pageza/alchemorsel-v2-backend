@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
-	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
 
@@ -147,7 +146,8 @@ func (s *ProfileService) GetProfileHistory(userID uuid.UUID) ([]map[string]inter
 	return result, nil
 }
 
-func (s *ProfileService) GetProfile(userID uuid.UUID) (*models.UserProfile, error) {
+// GetUserProfile retrieves a user's profile
+func (s *ProfileService) GetUserProfile(userID uuid.UUID) (*models.UserProfile, error) {
 	var profile models.UserProfile
 	if err := s.db.Where("user_id = ?", userID).First(&profile).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -165,8 +165,9 @@ func (s *ProfileService) GetProfile(userID uuid.UUID) (*models.UserProfile, erro
 	return &profile, nil
 }
 
-func (s *ProfileService) UpdateProfile(userID uuid.UUID, updates map[string]interface{}) error {
-	return s.db.Model(&models.UserProfile{}).Where("user_id = ?", userID).Updates(updates).Error
+// UpdateUserProfile updates a user's profile
+func (s *ProfileService) UpdateUserProfile(userID uuid.UUID, profile *models.UserProfile) error {
+	return s.db.Model(&models.UserProfile{}).Where("user_id = ?", userID).Updates(profile).Error
 }
 
 func (s *ProfileService) Logout(userID uuid.UUID) error {
@@ -176,8 +177,8 @@ func (s *ProfileService) Logout(userID uuid.UUID) error {
 }
 
 // GetUserRecipes returns all recipes created by the given user
-func (s *ProfileService) GetUserRecipes(userID uuid.UUID) ([]model.Recipe, error) {
-	var recipes []model.Recipe
+func (s *ProfileService) GetUserRecipes(userID uuid.UUID) ([]models.Recipe, error) {
+	var recipes []models.Recipe
 	if err := s.db.Where("user_id = ?", userID).Find(&recipes).Error; err != nil {
 		return nil, err
 	}

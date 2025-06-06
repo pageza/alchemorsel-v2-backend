@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
-	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
 
@@ -18,11 +17,11 @@ type Profile struct {
 }
 
 type ProfileService interface {
-	GetProfile(userID uuid.UUID) (*models.UserProfile, error)
-	UpdateProfile(userID uuid.UUID, updates map[string]interface{}) error
+	GetUserProfile(userID uuid.UUID) (*models.UserProfile, error)
+	UpdateUserProfile(userID uuid.UUID, profile *models.UserProfile) error
 	Logout(userID uuid.UUID) error
 	ValidateToken(token string) (*middleware.TokenClaims, error)
-	GetUserRecipes(userID uuid.UUID) ([]model.Recipe, error)
+	GetUserRecipes(userID uuid.UUID) ([]models.Recipe, error)
 }
 
 type ProfileHandler struct {
@@ -52,7 +51,7 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.profileService.GetProfile(userID.(uuid.UUID))
+	profile, err := h.profileService.GetUserProfile(userID.(uuid.UUID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get profile"})
 		return
@@ -77,13 +76,13 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	var updates map[string]interface{}
-	if err := c.ShouldBindJSON(&updates); err != nil {
+	var profile models.UserProfile
+	if err := c.ShouldBindJSON(&profile); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	if err := h.profileService.UpdateProfile(userID.(uuid.UUID), updates); err != nil {
+	if err := h.profileService.UpdateUserProfile(userID.(uuid.UUID), &profile); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
 		return
 	}
