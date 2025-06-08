@@ -52,6 +52,11 @@ jobs:
           echo "PostgreSQL failed to start"
           exit 1
 
+      - name: Debug DB env
+        run: |
+          echo "User: ${{ secrets.TEST_DB_USER }}"
+          echo "DB: ${{ secrets.TEST_DB_NAME }}"
+
       - name: Install pgvector extension
         env:
           PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
