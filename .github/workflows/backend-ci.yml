@@ -1,8 +1,5 @@
 name: Backend CI
 
-# Trigger workflow on push to codex-1 branch and pull requests
-# This workflow runs tests and linting for the backend
-# Because I hate myself
 on:
   push:
     branches: [ codex-1 ]
@@ -11,7 +8,6 @@ on:
 
 jobs:
   test:
-    if: github.ref != 'refs/heads/fix/ci-test-connection'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -34,7 +30,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.21'
 
       - name: Install dependencies
         run: go mod download
@@ -79,4 +75,4 @@ jobs:
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
         with:
-          version: latest
+          version: latest 
