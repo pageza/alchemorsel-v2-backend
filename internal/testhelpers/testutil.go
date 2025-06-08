@@ -149,9 +149,15 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 
 	// Register cleanup
 	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
 		if err := container.Terminate(ctx); err != nil {
 			t.Errorf("failed to terminate container: %v", err)
 		}
+
+		// Wait for container to be fully terminated
+		<-ctx.Done()
 	})
 
 	return db

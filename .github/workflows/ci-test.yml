@@ -1,0 +1,46 @@
+name: CI Test
+
+on:
+  push:
+    branches: [ codex-1 ]
+  pull_request:
+    branches: [ codex-1 ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Debug environment and test connection
+        env:
+          TEST_DB_USER: postgres
+          TEST_DB_NAME: postgres
+          TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+        run: |
+          echo "Checking PostgreSQL service:"
+          docker ps
+          echo "Environment variables (length only for security):"
+          echo "TEST_DB_USER length: ${#TEST_DB_USER}"
+          echo "TEST_DB_NAME length: ${#TEST_DB_NAME}"
+          echo "TEST_DB_PASSWORD length: ${#TEST_DB_PASSWORD}"
+          echo "Testing connection as postgres user:"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U postgres -d postgres -c "\l" || echo "Connection failed"
+
+      - name: Print Postgres logs
+        run: docker logs $(docker ps -q --filter ancestor=pgvector/pgvector:pg16) 
