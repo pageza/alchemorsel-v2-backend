@@ -39,5 +39,7 @@ jobs:
           echo "TEST_DB_USER length: ${#TEST_DB_USER}"
           echo "TEST_DB_NAME length: ${#TEST_DB_NAME}"
           echo "TEST_DB_PASSWORD length: ${#TEST_DB_PASSWORD}"
+          echo "Testing connection as postgres user:"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U postgres -d ${{ vars.TEST_DB_NAME }} -c "\l" || echo "Connection failed"
           echo "Testing connection:"
           PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U ${{ vars.TEST_DB_USER }} -d ${{ vars.TEST_DB_NAME }} -c "\l" || echo "Connection failed" 
