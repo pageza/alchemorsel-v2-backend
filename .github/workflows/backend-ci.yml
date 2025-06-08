@@ -51,8 +51,12 @@ jobs:
           exit 1
 
       - name: Install pgvector extension
+        env:
+          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          PGUSER: ${{ secrets.TEST_DB_USER }}
+          PGDATABASE: ${{ secrets.TEST_DB_NAME }}
         run: |
-          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }} -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests
         run: go test ./... -v
