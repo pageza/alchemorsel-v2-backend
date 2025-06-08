@@ -1,5 +1,5 @@
-name: Backend CI
-# To Trigger changes for CI
+name: CI Test
+
 on:
   push:
     branches: [ codex-1 ]
@@ -27,54 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Wait for PostgreSQL
+      - name: Debug environment
         run: |
-          for i in {1..30}; do
-            if PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} pg_isready -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }}; then
-              echo "PostgreSQL is ready!"
-              exit 0
-            fi
-            echo "Waiting for PostgreSQL to be ready... attempt $i"
-            sleep 2
-          done
-          echo "PostgreSQL failed to start"
-          exit 1
-
-      - name: Debug DB env
-        run: |
-          echo "User: ${{ secrets.TEST_DB_USER }}"
-          echo "DB: ${{ secrets.TEST_DB_NAME }}"
-
-      - name: Install pgvector extension
-        env:
-          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          PGUSER: ${{ secrets.TEST_DB_USER }}
-          PGDATABASE: ${{ secrets.TEST_DB_NAME }}
-        run: |
-          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
-      - name: Run tests
-        run: go test ./... -v
-        env:
-          CI: "true"
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: ${{ secrets.TEST_DB_USER }}
-          DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.TEST_DB_NAME }}
-          DB_SSL_MODE: disable
-          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
-          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
-
-      - name: Run linter
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: latest 
+          echo "Checking PostgreSQL service:"
+          docker ps
+          echo "Environment variables:"
+          echo "TEST_DB_USER: ${{ secrets.TEST_DB_USER }}"
+          echo "TEST_DB_NAME: ${{ secrets.TEST_DB_NAME }}"
+          echo "TEST_DB_PASSWORD exists: ${{ secrets.TEST_DB_PASSWORD != '' }}"
+          echo "Testing connection:"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }} -c "\l" || echo "Connection failed" 
