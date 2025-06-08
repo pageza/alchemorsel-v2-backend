@@ -8,8 +8,7 @@ on:
 
 jobs:
   test:
-    # Skip tests for the fix branch
-    if: github.ref != 'refs/heads/fix/ci-test-db'
+    if: github.ref != 'refs/heads/fix/ci-db-connection'
     runs-on: ubuntu-latest
     services:
       postgres:
