@@ -3,6 +3,7 @@ package testhelpers
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -16,6 +17,68 @@ import (
 
 // SetupTestDatabase creates a test database instance using a containerized PostgreSQL with pgvector.
 func SetupTestDatabase(t *testing.T) *gorm.DB {
+	// Check if we're in CI environment
+	if os.Getenv("CI") == "true" {
+		// Use environment variables for database connection
+		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_USER"),
+			os.Getenv("DB_PASSWORD"),
+			os.Getenv("DB_NAME"),
+			os.Getenv("DB_SSL_MODE"),
+		)
+		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err != nil {
+			t.Fatalf("failed to connect to database: %v", err)
+		}
+
+		// Install pgvector extension
+		if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
+			t.Fatalf("failed to install pgvector extension: %v", err)
+		}
+
+		// Create dietary preference type enum
+		if err := db.Exec(`
+			DO $$ BEGIN
+				CREATE TYPE dietary_preference_type AS ENUM (
+					'vegetarian',
+					'vegan',
+					'pescatarian',
+					'gluten-free',
+					'dairy-free',
+					'nut-free',
+					'soy-free',
+					'egg-free',
+					'shellfish-free',
+					'custom'
+				);
+			EXCEPTION
+				WHEN duplicate_object THEN null;
+			END $$;
+		`).Error; err != nil {
+			t.Fatalf("failed to create dietary preference type: %v", err)
+		}
+
+		// Auto-migrate the schema
+		err = db.AutoMigrate(
+			&models.User{},
+			&models.UserProfile{},
+			&models.Recipe{},
+			&models.RecipeFavorite{},
+			&models.DietaryPreference{},
+			&models.Allergen{},
+		)
+		if err != nil {
+			t.Fatalf("failed to migrate test database: %v", err)
+		}
+
+		return db
+	}
+
+	// Local development environment - use test container
 	ctx := context.Background()
 
 	// Create PostgreSQL container
@@ -64,12 +127,36 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to install pgvector extension: %v", err)
 	}
 
+	// Create dietary preference type enum
+	if err := db.Exec(`
+		DO $$ BEGIN
+			CREATE TYPE dietary_preference_type AS ENUM (
+				'vegetarian',
+				'vegan',
+				'pescatarian',
+				'gluten-free',
+				'dairy-free',
+				'nut-free',
+				'soy-free',
+				'egg-free',
+				'shellfish-free',
+				'custom'
+			);
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
+	`).Error; err != nil {
+		t.Fatalf("failed to create dietary preference type: %v", err)
+	}
+
 	// Auto-migrate the schema
 	err = db.AutoMigrate(
 		&models.User{},
 		&models.UserProfile{},
 		&models.Recipe{},
 		&models.RecipeFavorite{},
+		&models.DietaryPreference{},
+		&models.Allergen{},
 	)
 	if err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
