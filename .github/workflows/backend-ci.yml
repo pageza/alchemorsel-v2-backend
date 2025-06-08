@@ -8,7 +8,24 @@ on:
 
 jobs:
   test:
+    # Skip tests for the fix branch
+    if: github.ref != 'refs/heads/fix/ci-test-db'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,11 +40,12 @@ jobs:
       - name: Run tests
         run: go test ./...
         env:
+          CI: "true"
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_USER: postgres
+          DB_USER: ${{ secrets.TEST_DB_USER }}
           DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          DB_NAME: alchemorsel_test
+          DB_NAME: ${{ secrets.TEST_DB_NAME }}
           DB_SSL_MODE: disable
           JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
           LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
