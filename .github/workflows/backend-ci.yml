@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: ${{ vars.TEST_DB_USER }}
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ vars.TEST_DB_NAME }}
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
@@ -29,8 +29,8 @@ jobs:
 
       - name: Debug environment
         env:
-          TEST_DB_USER: ${{ vars.TEST_DB_USER }}
-          TEST_DB_NAME: ${{ vars.TEST_DB_NAME }}
+          TEST_DB_USER: postgres
+          TEST_DB_NAME: postgres
           TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
         run: |
           echo "Checking PostgreSQL service:"
@@ -40,6 +40,6 @@ jobs:
           echo "TEST_DB_NAME length: ${#TEST_DB_NAME}"
           echo "TEST_DB_PASSWORD length: ${#TEST_DB_PASSWORD}"
           echo "Testing connection as postgres user:"
-          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U postgres -d ${{ vars.TEST_DB_NAME }} -c "\l" || echo "Connection failed"
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U postgres -d postgres -c "\l" || echo "Connection failed"
           echo "Testing connection:"
           PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U ${{ vars.TEST_DB_USER }} -d ${{ vars.TEST_DB_NAME }} -c "\l" || echo "Connection failed" 
