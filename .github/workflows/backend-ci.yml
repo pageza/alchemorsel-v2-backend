@@ -1,0 +1,77 @@
+name: Backend CI
+
+# Trigger workflow on push to codex-1 branch and pull requests
+on:
+  push:
+    branches: [ codex-1 ]
+  pull_request:
+    branches: [ codex-1 ]
+
+jobs:
+  test:
+    if: github.ref != 'refs/heads/fix/ci-psql-env'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} pg_isready -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }}; then
+              echo "PostgreSQL is ready!"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL to be ready... attempt $i"
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          exit 1
+
+      - name: Install pgvector extension
+        env:
+          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          PGUSER: ${{ secrets.TEST_DB_USER }}
+          PGDATABASE: ${{ secrets.TEST_DB_NAME }}
+        run: |
+          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Run tests
+        run: go test ./... -v
+        env:
+          CI: "true"
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: ${{ secrets.TEST_DB_USER }}
+          DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          DB_NAME: ${{ secrets.TEST_DB_NAME }}
+          DB_SSL_MODE: disable
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest

@@ -25,11 +25,18 @@ DB_PASSWORD=your_password
 DB_NAME=your_database
 REDIS_HOST=localhost
 REDIS_PORT=6379
+# API authentication (one of these is required)
+DEEPSEEK_API_KEY=your_deepseek_key
+DEEPSEEK_API_KEY_FILE=path/to/keyfile
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+# S3 configuration for profile pictures
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=alchemorsel-profile-pictures
 ```
 
 3. Run the application:
 ```bash
-go run main.go
+go run ./cmd/api
 ```
 
 ## Development
@@ -42,19 +49,24 @@ go run main.go
 
 ```
 backend/
-├── cmd/              # Application entry points
-├── internal/         # Private application code
-│   ├── api/         # API handlers
-│   ├── config/      # Configuration
-│   ├── models/      # Data models
-│   └── services/    # Business logic
-├── pkg/             # Public library code
-└── main.go         # Main application entry point
+├── cmd/
+│   └── api/         # Application entry point
+├── config/          # Configuration helpers
+├── internal/        # Private application code
+│   ├── api/         # HTTP handlers
+│   ├── database/    # Database utilities
+│   ├── middleware/  # HTTP middleware
+│   ├── model/       # Recipe models
+│   ├── models/      # User and profile models
+│   ├── server/      # Server setup
+│   └── service/     # Business logic
+├── migrations/      # Database migrations
+└── scripts/         # Utility scripts
 ```
 
 ## Available Commands
 
-- `go run main.go` - Run the application
+- `go run ./cmd/api` - Run the application
 - `go test ./...` - Run all tests
 - `go mod tidy` - Clean up dependencies
 - `go fmt ./...` - Format code
@@ -62,10 +74,62 @@ backend/
 
 ## API Documentation
 
-The API documentation is generated using Swagger/OpenAPI. To view the documentation:
+The API documentation is generated using Swagger/OpenAPI. A machine readable
+specification is located at `api/docs/openapi.yaml`.
+
+To view the interactive documentation:
 
 1. Start the server
 2. Visit `http://localhost:8080/swagger`
+
+### Auth Endpoints
+
+`POST /api/v1/auth/register` registers a new user. Example payload:
+
+```json
+{
+  "name": "Jane Doe",
+  "email": "jane@example.com",
+  "password": "strongpassword",
+  "username": "janedoe",
+  "dietary_preferences": ["vegan"],
+  "allergies": ["peanuts"]
+}
+```
+
+At least one of `dietary_preferences` or `allergies` must be provided. The response returns a `token` field.
+
+`POST /api/v1/auth/login` accepts:
+
+```json
+{
+  "email": "jane@example.com",
+  "password": "strongpassword"
+}
+```
+
+It also returns a JWT token on success.
+
+### Recipes Endpoint
+
+-`GET /api/v1/recipes` supports optional query parameters:
+
+- `q` - search term. When running with Postgres, this uses pgvector to order results by embedding similarity.
+- `category` - filter by category
+- `dietary` - comma-separated dietary preferences to match recipe categories
+- `exclude` - comma-separated allergens or ingredients to omit
+- `POST /api/v1/recipes/:id/favorite` - add a recipe to the authenticated user's favorites
+- `DELETE /api/v1/recipes/:id/favorite` - remove a recipe from the authenticated user's favorites
+
+Favorites are stored in the `recipe_favorites` table created by the database migrations.
+
+### LLM Endpoint
+
+`POST /api/v1/llm/query` generates a recipe using the language model. This route
+requires a valid `Authorization` header with a bearer token. The response
+includes the persisted recipe with the authenticated user ID attached.
+The generated recipe respects the user's saved dietary preferences and
+allergens.
 
 ## Contributing
 

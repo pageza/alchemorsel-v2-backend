@@ -2,90 +2,81 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/api"
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 // Server represents the HTTP server
 type Server struct {
-	router *gin.Engine
-	http   *http.Server
-	db     *gorm.DB
-	logger *log.Logger
+	router  *gin.Engine
+	http    *http.Server
+	db      *gorm.DB
+	logger  *log.Logger
+	auth    *service.AuthService
+	profile *service.ProfileService
 }
 
-// New creates a new Server instance
-func New(cfg *config.Config, db *gorm.DB) *Server {
-	gin.SetMode(gin.ReleaseMode)
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(gin.Logger())
+// NewServer creates a new server instance
+func NewServer(db *gorm.DB, auth *service.AuthService, profile *service.ProfileService) *Server {
+	router := gin.Default()
 
 	// Add CORS middleware
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Cache-Control", "X-Requested-With"},
-		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
+	router.Use(middleware.CORS())
+
+	// Create API handlers
+	authHandler := api.NewAuthHandler(auth, db)
+
+	// Register routes
+	api.RegisterProfileRoutes(router, profile, auth)
+	authHandler.RegisterRoutes(router.Group("/api/v1"))
 
 	return &Server{
-		router: router,
-		db:     db,
-		logger: log.New(log.Writer(), "[SERVER] ", log.LstdFlags),
+		router:  router,
+		db:      db,
+		auth:    auth,
+		profile: profile,
 	}
 }
 
-// Start starts the HTTP server
-func (s *Server) Start(cfg *config.Config) error {
-	// Initialize services
-	profileService := service.NewProfileService(s.db, cfg.JWTSecret)
-	authService := service.NewAuthService(s.db, cfg.JWTSecret)
-
-	// Initialize handlers
-	profileHandler := api.NewProfileHandler(profileService)
-	authHandler := api.NewAuthHandler(authService)
-	recipeHandler := api.NewRecipeHandler(s.db, authService)
-
-	llmHandler, err := api.NewLLMHandler(s.db)
-	if err != nil {
-		return fmt.Errorf("failed to create LLM handler: %w", err)
-	}
-
-	apiGroup := s.router.Group("/api/v1")
-	profileHandler.RegisterRoutes(apiGroup)
-	authHandler.RegisterRoutes(apiGroup)
-	recipeHandler.RegisterRoutes(apiGroup)
-	llmHandler.RegisterRoutes(apiGroup)
-
-	// Add health check endpoint
-	s.router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-		})
-	})
-
-	// Create HTTP server
-	s.http = &http.Server{
-		Addr:    fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
+// Start starts the server
+func (s *Server) Start(port string) error {
+	srv := &http.Server{
+		Addr:    ":" + port,
 		Handler: s.router,
 	}
 
-	// Start server
-	s.logger.Printf("Starting server on port %s", cfg.ServerPort)
-	return s.http.ListenAndServe()
+	// Start server in a goroutine
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Stop gracefully stops the HTTP server
