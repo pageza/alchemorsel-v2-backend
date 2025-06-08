@@ -1,6 +1,7 @@
 name: Backend CI
 
 # Trigger workflow on push to codex-1 branch and pull requests
+# This workflow runs tests and linting for the backend
 on:
   push:
     branches: [ codex-1 ]
@@ -9,7 +10,7 @@ on:
 
 jobs:
   test:
-    if: github.ref != 'refs/heads/fix/ci-psql-env'
+    if: github.ref != 'refs/heads/fix/ci-psql-command-v2'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -53,10 +54,8 @@ jobs:
       - name: Install pgvector extension
         env:
           PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          PGUSER: ${{ secrets.TEST_DB_USER }}
-          PGDATABASE: ${{ secrets.TEST_DB_NAME }}
         run: |
-          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          psql -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }} -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests
         run: go test ./... -v
