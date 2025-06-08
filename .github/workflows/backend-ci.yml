@@ -42,4 +42,7 @@ jobs:
           echo "Testing connection as postgres user:"
           PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U postgres -d postgres -c "\l" || echo "Connection failed"
           echo "Testing connection:"
-          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U ${{ vars.TEST_DB_USER }} -d ${{ vars.TEST_DB_NAME }} -c "\l" || echo "Connection failed" 
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U ${{ vars.TEST_DB_USER }} -d ${{ vars.TEST_DB_NAME }} -c "\l" || echo "Connection failed"
+
+      - name: Print Postgres logs
+        run: docker logs $(docker ps -q --filter ancestor=pgvector/pgvector:pg16) 
