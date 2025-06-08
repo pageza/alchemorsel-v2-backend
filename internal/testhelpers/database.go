@@ -19,6 +19,23 @@ import (
 func SetupTestDatabase(t *testing.T) *gorm.DB {
 	// Check if we're in CI environment
 	if os.Getenv("CI") == "true" {
+		// Debug logging
+		t.Logf("CI environment detected")
+		t.Logf("DB_HOST: %s", os.Getenv("DB_HOST"))
+		t.Logf("DB_PORT: %s", os.Getenv("DB_PORT"))
+		t.Logf("DB_USER: %s", os.Getenv("DB_USER"))
+		t.Logf("DB_PASSWORD: %s", os.Getenv("DB_PASSWORD"))
+		t.Logf("DB_NAME: %s", os.Getenv("DB_NAME"))
+		t.Logf("DB_SSL_MODE: %s", os.Getenv("DB_SSL_MODE"))
+
+		// Validate required environment variables
+		requiredEnvVars := []string{"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
+		for _, envVar := range requiredEnvVars {
+			if os.Getenv(envVar) == "" {
+				t.Fatalf("required environment variable %s is not set", envVar)
+			}
+		}
+
 		// Use environment variables for database connection
 		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			os.Getenv("DB_HOST"),
@@ -28,6 +45,7 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 			os.Getenv("DB_NAME"),
 			os.Getenv("DB_SSL_MODE"),
 		)
+		t.Logf("DSN: %s", dsn)
 		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
