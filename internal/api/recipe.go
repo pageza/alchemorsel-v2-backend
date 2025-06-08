@@ -1,312 +1,303 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
+	pgvector "github.com/pgvector/pgvector-go"
+	"gorm.io/gorm"
 )
 
+// RecipeHandler handles recipe-related requests
 type RecipeHandler struct {
-	db               *gorm.DB
-	authService      *service.AuthService
-	llmService       *service.LLMService
-	embeddingService *service.EmbeddingService
+	recipeService    service.IRecipeService
+	authService      service.IAuthService
+	llmService       service.LLMServiceInterface
+	embeddingService service.EmbeddingServiceInterface
 }
 
-func NewRecipeHandler(db *gorm.DB, authService *service.AuthService) (*RecipeHandler, error) {
-	llmService, _ := service.NewLLMService()
-	embeddingService, err := service.NewEmbeddingService()
-	if err != nil {
-		return nil, err
-	}
+// NewRecipeHandler creates a new RecipeHandler
+func NewRecipeHandler(recipeService service.IRecipeService, authService service.IAuthService, llmService service.LLMServiceInterface, embeddingService service.EmbeddingServiceInterface) *RecipeHandler {
 	return &RecipeHandler{
-		db:               db,
+		recipeService:    recipeService,
 		authService:      authService,
 		llmService:       llmService,
 		embeddingService: embeddingService,
-	}, nil
+	}
 }
 
+// RegisterRoutes registers the recipe routes
 func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 	recipes := router.Group("/recipes")
+	recipes.Use(middleware.AuthMiddleware(h.authService))
 	{
 		recipes.GET("", h.ListRecipes)
 		recipes.GET("/:id", h.GetRecipe)
-		recipes.POST("", middleware.AuthMiddleware(h.authService), h.CreateRecipe)
-		recipes.PUT("/:id", middleware.AuthMiddleware(h.authService), h.UpdateRecipe)
-		recipes.DELETE("/:id", middleware.AuthMiddleware(h.authService), h.DeleteRecipe)
-		recipes.POST("/:id/favorite", middleware.AuthMiddleware(h.authService), h.FavoriteRecipe)
-		recipes.DELETE("/:id/favorite", middleware.AuthMiddleware(h.authService), h.UnfavoriteRecipe)
+		recipes.POST("", h.CreateRecipe)
+		recipes.PUT("/:id", h.UpdateRecipe)
+		recipes.DELETE("/:id", h.DeleteRecipe)
+		recipes.POST("/:id/favorite", h.FavoriteRecipe)
+		recipes.DELETE("/:id/favorite", h.UnfavoriteRecipe)
 	}
 }
 
-func (h *RecipeHandler) ListRecipes(c *gin.Context) {
-	var recipes []models.Recipe
-
-	query := h.db
-
-	if search := c.Query("q"); search != "" {
-		if h.db.Dialector.Name() == "postgres" {
-			// Generate embedding for semantic search
-			vec, err := h.embeddingService.GenerateEmbedding(search)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate embedding"})
-				return
-			}
-
-			// Combine semantic and keyword search
-			// Use a subquery to get both semantic and keyword matches
-			subQuery := h.db.Model(&models.Recipe{}).
-				Select("id, embedding <-> ? as similarity", vec).
-				Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ? OR LOWER(ingredients::text) LIKE ?",
-					"%"+strings.ToLower(search)+"%",
-					"%"+strings.ToLower(search)+"%",
-					"%"+strings.ToLower(search)+"%",
-				)
-
-			// Join with the main query and order by similarity
-			query = query.Joins("JOIN (?) as search ON recipes.id = search.id", subQuery).
-				Order("search.similarity ASC")
-		} else {
-			// Fallback to keyword search for non-PostgreSQL databases
-			like := "%" + strings.ToLower(search) + "%"
-			query = query.Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ? OR LOWER(ingredients) LIKE ?",
-				like, like, like)
-		}
-	}
-
-	if category := c.Query("category"); category != "" {
-		query = query.Where("category = ?", category)
-	}
-
-	if cuisine := c.Query("cuisine"); cuisine != "" {
-		query = query.Where("cuisine = ?", cuisine)
-	}
-
-	if prefs := c.Query("dietary"); prefs != "" {
-		for _, p := range strings.Split(prefs, ",") {
-			like := "%" + strings.ToLower(strings.TrimSpace(p)) + "%"
-			query = query.Where("LOWER(dietary_preferences::text) LIKE ?", like)
-		}
-	}
-
-	if ex := c.Query("exclude"); ex != "" {
-		for _, a := range strings.Split(ex, ",") {
-			like := "%" + strings.ToLower(strings.TrimSpace(a)) + "%"
-			if h.db.Dialector.Name() == "postgres" {
-				query = query.Where("LOWER(ingredients::text) NOT LIKE ?", like)
-			} else {
-				query = query.Where("LOWER(ingredients) NOT LIKE ?", like)
-			}
-		}
-	}
-
-	result := query.Find(&recipes)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch recipes"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"recipes": recipes,
-	})
-}
-
-func (h *RecipeHandler) GetRecipe(c *gin.Context) {
-	id := c.Param("id")
-	var recipe models.Recipe
-	result := h.db.First(&recipe, "id = ?", id)
-	if result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Recipe not found"})
-		return
-	}
-
-	c.JSON(http.StatusOK, recipe)
-}
-
+// CreateRecipe handles creating a new recipe
 func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
-	var recipe models.Recipe
-	if err := c.ShouldBindJSON(&recipe); err != nil {
+	println("[DEBUG] CreateRecipe called")
+	fmt.Printf("[DEBUG] Context keys: %v\n", c.Keys)
+	userIDVal, exists := c.Get("user_id")
+	fmt.Printf("[DEBUG] user_id value: %#v\n", userIDVal)
+	if !exists {
+		fmt.Println("[DEBUG] user_id missing from context. Responding 401 Unauthorized.")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		fmt.Printf("[DEBUG] user_id is not uuid.UUID, got: %T\n", userIDVal)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	fmt.Printf("[DEBUG] user_id: %s\n", userID.String())
+	var req struct {
+		Name               string    `json:"name" binding:"required"`
+		Description        string    `json:"description" binding:"required"`
+		Category           string    `json:"category" binding:"required"`
+		Cuisine            string    `json:"cuisine"`
+		ImageURL           string    `json:"image_url"`
+		Ingredients        []string  `json:"ingredients" binding:"required"`
+		Instructions       []string  `json:"instructions" binding:"required"`
+		Calories           float64   `json:"calories"`
+		Protein            float64   `json:"protein"`
+		Carbs              float64   `json:"carbs"`
+		Fat                float64   `json:"fat"`
+		DietaryPreferences []string  `json:"dietary_preferences"`
+		Tags               []string  `json:"tags"`
+		Embedding          []float32 `json:"embedding"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("[DEBUG] Failed to bind JSON: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get user ID from context
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
+	// Create a copy of the request for logging without the full embedding
+	logReq := req
+	if len(logReq.Embedding) > 0 {
+		// Only show first and last value of the embedding vector
+		logReq.Embedding = []float32{logReq.Embedding[0], logReq.Embedding[len(logReq.Embedding)-1]}
 	}
+	fmt.Printf("[DEBUG] Parsed CreateRecipeRequest: {Name:%s Description:%s Category:%s Cuisine:%s ImageURL:%s Ingredients:%v Instructions:%v Calories:%v Protein:%v Carbs:%v Fat:%v DietaryPreferences:%v Tags:%v Embedding:%v}\n",
+		logReq.Name, logReq.Description, logReq.Category, logReq.Cuisine, logReq.ImageURL,
+		logReq.Ingredients, logReq.Instructions, logReq.Calories, logReq.Protein, logReq.Carbs, logReq.Fat,
+		logReq.DietaryPreferences, logReq.Tags, logReq.Embedding)
 
-	// Set the user ID on the recipe
-	recipe.UserID = userID.(uuid.UUID)
-
-	// calculate macros if not provided
-	if recipe.Calories == 0 && recipe.Protein == 0 && recipe.Carbs == 0 && recipe.Fat == 0 {
-		if h.llmService != nil {
-			macros, err := h.llmService.CalculateMacros([]string(recipe.Ingredients))
-			if err == nil && macros != nil {
-				recipe.Calories = macros.Calories
-				recipe.Protein = macros.Protein
-				recipe.Carbs = macros.Carbs
-				recipe.Fat = macros.Fat
-			}
+	// Create embedding vector if not provided
+	var embedding pgvector.Vector
+	if len(req.Embedding) > 0 {
+		embedding = pgvector.NewVector(req.Embedding)
+	} else {
+		// Create a default embedding vector with 1536 dimensions
+		defaultEmbedding := make([]float32, 1536)
+		for i := range defaultEmbedding {
+			defaultEmbedding[i] = float32(i) / 1536.0
 		}
+		embedding = pgvector.NewVector(defaultEmbedding)
 	}
 
-	// Generate tags from category, cuisine, and dietary preferences
-	tags := make([]string, 0)
-	if recipe.Category != "" {
-		tags = append(tags, recipe.Category)
+	recipe := &models.Recipe{
+		Name:               req.Name,
+		Description:        req.Description,
+		Category:           req.Category,
+		Cuisine:            req.Cuisine,
+		ImageURL:           req.ImageURL,
+		Ingredients:        models.JSONBStringArray(req.Ingredients),
+		Instructions:       models.JSONBStringArray(req.Instructions),
+		Calories:           req.Calories,
+		Protein:            req.Protein,
+		Carbs:              req.Carbs,
+		Fat:                req.Fat,
+		DietaryPreferences: models.JSONBStringArray(req.DietaryPreferences),
+		Tags:               models.JSONBStringArray(req.Tags),
+		UserID:             userID,
+		Embedding:          embedding,
 	}
-	if recipe.Cuisine != "" {
-		tags = append(tags, recipe.Cuisine)
-	}
-	if len(recipe.DietaryPreferences) > 0 {
-		tags = append(tags, []string(recipe.DietaryPreferences)...)
-	}
-	recipe.Tags = models.JSONBStringArray(tags)
 
-	// generate embedding with enhanced context
-	embedding, err := h.embeddingService.GenerateEmbeddingFromRecipe(
-		recipe.Name,
-		recipe.Description,
-		recipe.Ingredients,
-		recipe.Category,
-		recipe.DietaryPreferences,
-	)
+	createdRecipe, err := h.recipeService.CreateRecipe(c.Request.Context(), recipe)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate embedding"})
+		fmt.Printf("[DEBUG] Error creating recipe: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	recipe.Embedding = embedding
-
-	result := h.db.Create(&recipe)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create recipe"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, recipe)
+	fmt.Printf("[DEBUG] Successfully created recipe. Recipe ID: %s\n", createdRecipe.ID)
+	c.JSON(http.StatusCreated, gin.H{"recipe": createdRecipe})
 }
 
+// GetRecipe handles getting a single recipe
+func (h *RecipeHandler) GetRecipe(c *gin.Context) {
+	println("[DEBUG] GetRecipe called")
+	fmt.Printf("[DEBUG] Context keys: %v\n", c.Keys)
+	userIDVal, exists := c.Get("user_id")
+	fmt.Printf("[DEBUG] user_id value: %#v\n", userIDVal)
+	if !exists {
+		fmt.Println("[DEBUG] user_id missing from context. Responding 401 Unauthorized.")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		fmt.Printf("[DEBUG] user_id is not uuid.UUID, got: %T\n", userIDVal)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	fmt.Printf("[DEBUG] user_id: %s\n", userID.String())
+	id := c.Param("id")
+	fmt.Printf("[DEBUG] Recipe ID param: %s\n", id)
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
+		return
+	}
+
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		fmt.Printf("[DEBUG] Invalid recipe ID format: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID format"})
+		return
+	}
+
+	recipe, err := h.recipeService.GetRecipe(c.Request.Context(), recipeID)
+	if err != nil {
+		fmt.Printf("[DEBUG] Error getting recipe: %v\n", err)
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Log recipe details without the embedding vector
+	fmt.Printf("[DEBUG] Successfully retrieved recipe: {ID:%s Name:%s Description:%s Category:%s Cuisine:%s ImageURL:%s Ingredients:%v Instructions:%v Calories:%v Protein:%v Carbs:%v Fat:%v UserID:%s DietaryPreferences:%v Tags:%v}\n",
+		recipe.ID, recipe.Name, recipe.Description, recipe.Category, recipe.Cuisine, recipe.ImageURL,
+		recipe.Ingredients, recipe.Instructions, recipe.Calories, recipe.Protein, recipe.Carbs, recipe.Fat,
+		recipe.UserID, recipe.DietaryPreferences, recipe.Tags)
+
+	c.JSON(http.StatusOK, gin.H{"recipe": recipe})
+}
+
+// UpdateRecipe handles updating a recipe
 func (h *RecipeHandler) UpdateRecipe(c *gin.Context) {
 	id := c.Param("id")
-	var recipe models.Recipe
-	if err := c.ShouldBindJSON(&recipe); err != nil {
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
+		return
+	}
+
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID"})
+		return
+	}
+
+	var req struct {
+		Name               string   `json:"name"`
+		Description        string   `json:"description"`
+		Category           string   `json:"category"`
+		Cuisine            string   `json:"cuisine"`
+		ImageURL           string   `json:"image_url"`
+		Ingredients        []string `json:"ingredients"`
+		Instructions       []string `json:"instructions"`
+		Calories           float64  `json:"calories"`
+		Protein            float64  `json:"protein"`
+		Carbs              float64  `json:"carbs"`
+		Fat                float64  `json:"fat"`
+		DietaryPreferences []string `json:"dietary_preferences"`
+		Tags               []string `json:"tags"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if recipe.Calories == 0 && recipe.Protein == 0 && recipe.Carbs == 0 && recipe.Fat == 0 {
-		if h.llmService != nil {
-			macros, err := h.llmService.CalculateMacros([]string(recipe.Ingredients))
-			if err == nil && macros != nil {
-				recipe.Calories = macros.Calories
-				recipe.Protein = macros.Protein
-				recipe.Carbs = macros.Carbs
-				recipe.Fat = macros.Fat
-			}
-		}
+	recipe := &models.Recipe{
+		Name:               req.Name,
+		Description:        req.Description,
+		Category:           req.Category,
+		Cuisine:            req.Cuisine,
+		ImageURL:           req.ImageURL,
+		Ingredients:        models.JSONBStringArray(req.Ingredients),
+		Instructions:       models.JSONBStringArray(req.Instructions),
+		Calories:           req.Calories,
+		Protein:            req.Protein,
+		Carbs:              req.Carbs,
+		Fat:                req.Fat,
+		DietaryPreferences: models.JSONBStringArray(req.DietaryPreferences),
+		Tags:               models.JSONBStringArray(req.Tags),
 	}
 
-	// generate embedding with enhanced context
-	embedding, err := h.embeddingService.GenerateEmbeddingFromRecipe(
-		recipe.Name,
-		recipe.Description,
-		recipe.Ingredients,
-		recipe.Category,
-		recipe.DietaryPreferences,
-	)
+	updatedRecipe, err := h.recipeService.UpdateRecipe(c.Request.Context(), recipeID, recipe)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate embedding"})
-		return
-	}
-	recipe.Embedding = embedding
-
-	result := h.db.Model(&models.Recipe{}).Where("id = ?", id).Updates(recipe)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update recipe"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Recipe updated successfully",
-		"id":      id,
-	})
+	c.JSON(http.StatusOK, updatedRecipe)
 }
 
+// DeleteRecipe handles deleting a recipe
 func (h *RecipeHandler) DeleteRecipe(c *gin.Context) {
 	id := c.Param("id")
-	result := h.db.Delete(&models.Recipe{}, "id = ?", id)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete recipe"})
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Recipe deleted successfully",
-		"id":      id,
-	})
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID"})
+		return
+	}
+
+	err = h.recipeService.DeleteRecipe(c.Request.Context(), recipeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+		fmt.Printf("[DEBUG] Error deleting recipe: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
+// ListRecipes handles listing recipes with optional filters
+func (h *RecipeHandler) ListRecipes(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+	recipes, err := h.recipeService.ListRecipes(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"recipes": recipes})
+}
+
+// FavoriteRecipe handles favoriting a recipe
 func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
-	idStr := c.Param("id")
-	recipeID, err := uuid.Parse(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe id"})
-		return
-	}
-
-	userIDVal, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
-	}
-
-	fav := models.RecipeFavorite{
-		RecipeID: recipeID,
-		UserID:   userIDVal.(uuid.UUID),
-	}
-	if err := h.db.Create(&fav).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to favorite recipe"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Recipe favorited successfully",
-		"id":      idStr,
-	})
+	// TODO: Implement favorite functionality
+	c.Status(http.StatusNotImplemented)
 }
 
+// UnfavoriteRecipe handles unfavoriting a recipe
 func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
-	idStr := c.Param("id")
-	recipeID, err := uuid.Parse(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe id"})
-		return
-	}
-
-	userIDVal, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
-	}
-
-	if err := h.db.Where("recipe_id = ? AND user_id = ?", recipeID, userIDVal.(uuid.UUID)).Delete(&models.RecipeFavorite{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unfavorite recipe"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Recipe unfavorited successfully",
-		"id":      idStr,
-	})
+	// TODO: Implement unfavorite functionality
+	c.Status(http.StatusNotImplemented)
 }

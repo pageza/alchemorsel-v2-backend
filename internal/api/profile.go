@@ -6,7 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
-	"github.com/pageza/alchemorsel-v2/backend/internal/models"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
+	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 )
 
 // Profile represents a user profile
@@ -16,50 +17,47 @@ type Profile struct {
 	Email    string `json:"email"`
 }
 
-type ProfileService interface {
-	GetUserProfile(userID uuid.UUID) (*models.UserProfile, error)
-	UpdateUserProfile(userID uuid.UUID, profile *models.UserProfile) error
-	Logout(userID uuid.UUID) error
-	ValidateToken(token string) (*middleware.TokenClaims, error)
-	GetUserRecipes(userID uuid.UUID) ([]models.Recipe, error)
-}
-
 type ProfileHandler struct {
-	profileService ProfileService
+	profileService service.IProfileService
+	authService    service.IAuthService
 }
 
-func NewProfileHandler(profileService ProfileService) *ProfileHandler {
+func NewProfileHandler(profileService service.IProfileService, authService service.IAuthService) *ProfileHandler {
 	return &ProfileHandler{
 		profileService: profileService,
+		authService:    authService,
 	}
 }
 
 func (h *ProfileHandler) RegisterRoutes(router *gin.RouterGroup) {
 	profile := router.Group("/profile")
-	profile.Use(middleware.AuthMiddleware(h.profileService))
+	profile.Use(middleware.AuthMiddleware(h.authService))
 	{
 		profile.GET("", h.GetProfile)
 		profile.PUT("", h.UpdateProfile)
 		profile.POST("/logout", h.Logout)
+		profile.GET("/recipes", h.GetUserRecipes)
+		profile.GET("/history", h.GetProfileHistory)
 	}
 }
 
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
 
-	profile, err := h.profileService.GetUserProfile(userID.(uuid.UUID))
+	profile, err := h.profileService.GetProfile(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get profile"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	recipes, err := h.profileService.GetUserRecipes(userID.(uuid.UUID))
+	recipes, err := h.profileService.GetUserRecipes(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get recipes"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -70,47 +68,76 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 }
 
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	var req types.UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var profile models.UserProfile
-	if err := c.ShouldBindJSON(&profile); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
-
-	if err := h.profileService.UpdateUserProfile(userID.(uuid.UUID), &profile); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
+	profile, err := h.profileService.UpdateProfile(c.Request.Context(), userID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "profile updated successfully"})
+	c.JSON(http.StatusOK, profile)
 }
 
 func (h *ProfileHandler) Logout(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
 		return
 	}
-
-	if err := h.profileService.Logout(userID.(uuid.UUID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to logout"})
+	if err := h.profileService.Logout(c.Request.Context(), userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.Status(http.StatusOK)
+}
 
-	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
+func (h *ProfileHandler) GetUserRecipes(c *gin.Context) {
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+	recipes, err := h.profileService.GetUserRecipes(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, recipes)
+}
+
+func (h *ProfileHandler) GetProfileHistory(c *gin.Context) {
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+	history, err := h.profileService.GetProfileHistory(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, history)
 }
 
 // RegisterProfileRoutes registers the profile API routes
-func RegisterProfileRoutes(router *gin.Engine, profileService ProfileService) {
-	handler := NewProfileHandler(profileService)
+func RegisterProfileRoutes(router *gin.Engine, profileService service.IProfileService, authService service.IAuthService) {
+	handler := NewProfileHandler(profileService, authService)
 
 	profile := router.Group("/api/v1/profile")
-	profile.Use(middleware.AuthMiddleware(profileService))
+	profile.Use(middleware.AuthMiddleware(authService))
 	{
 		profile.GET("", handler.GetProfile)
 		profile.PUT("", handler.UpdateProfile)

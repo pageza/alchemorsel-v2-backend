@@ -1,15 +1,14 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/gorm"
-
 	"github.com/google/uuid"
-	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
+	"github.com/pageza/alchemorsel-v2/backend/internal/types"
+	"gorm.io/gorm"
 )
 
 var (
@@ -17,78 +16,101 @@ var (
 	ErrTokenExpired = errors.New("token has expired")
 )
 
-// ProfileService handles profile-related business logic
+// ProfileService handles user profile operations
 type ProfileService struct {
-	db        *gorm.DB
-	jwtSecret []byte
+	db *gorm.DB
 }
 
-// NewProfileService creates a new profile service
-func NewProfileService(db *gorm.DB, jwtSecret string) *ProfileService {
+// Ensure ProfileService implements IProfileService
+var _ IProfileService = (*ProfileService)(nil)
+
+// NewProfileService creates a new ProfileService instance
+func NewProfileService(db *gorm.DB) *ProfileService {
 	return &ProfileService{
-		db:        db,
-		jwtSecret: []byte(jwtSecret),
+		db: db,
 	}
 }
 
-// Claims represents the JWT claims
-type Claims struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	jwt.RegisteredClaims
+// GetProfile retrieves a user's profile
+func (s *ProfileService) GetProfile(ctx context.Context, userID uuid.UUID) (*models.UserProfile, error) {
+	var profile models.UserProfile
+	if err := s.db.Where("user_id = ?", userID).First(&profile).Error; err != nil {
+		return nil, err
+	}
+	return &profile, nil
 }
 
-// GenerateToken generates a new JWT token for a user
-func (s *ProfileService) GenerateToken(userID, username string) (string, error) {
-	claims := &Claims{
-		UserID:   userID,
-		Username: username,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Token expires in 24 hours
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			NotBefore: jwt.NewNumericDate(time.Now()),
-		},
+// UpdateProfile updates a user's profile
+func (s *ProfileService) UpdateProfile(ctx context.Context, userID uuid.UUID, req *types.UpdateProfileRequest) (*models.UserProfile, error) {
+	var profile models.UserProfile
+	if err := s.db.Where("user_id = ?", userID).First(&profile).Error; err != nil {
+		return nil, err
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.jwtSecret)
+	// Update fields if provided
+	if req.Username != "" {
+		profile.Username = req.Username
+	}
+	if req.Bio != nil {
+		profile.Bio = *req.Bio
+	}
+	if req.ProfilePictureURL != nil {
+		profile.ProfilePictureURL = *req.ProfilePictureURL
+	}
+	if req.PrivacyLevel != nil {
+		profile.PrivacyLevel = *req.PrivacyLevel
+	}
+
+	if err := s.db.Save(&profile).Error; err != nil {
+		return nil, err
+	}
+
+	return &profile, nil
 }
 
-// ValidateToken validates a JWT token and returns the claims
-func (s *ProfileService) ValidateToken(tokenString string) (*middleware.TokenClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken
-		}
-		return s.jwtSecret, nil
-	})
+// Logout handles user logout
+func (s *ProfileService) Logout(ctx context.Context, userID uuid.UUID) error {
+	// In a real implementation, you might want to invalidate the token
+	// For now, we'll just return nil as the client will handle token removal
+	return nil
+}
 
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, ErrTokenExpired
-		}
-		return nil, ErrInvalidToken
+// GetUserRecipes retrieves a user's recipes
+func (s *ProfileService) GetUserRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error) {
+	var recipes []models.Recipe
+	if err := s.db.Where("user_id = ?", userID).Find(&recipes).Error; err != nil {
+		return nil, err
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		userIDStr, ok := claims["user_id"].(string)
-		if !ok {
-			return nil, ErrInvalidToken
-		}
+	// Convert to []*models.Recipe
+	result := make([]*models.Recipe, len(recipes))
+	for i := range recipes {
+		result[i] = &recipes[i]
+	}
+	return result, nil
+}
 
-		userID, err := uuid.Parse(userIDStr)
-		if err != nil {
-			return nil, ErrInvalidToken
-		}
-
-		username, _ := claims["username"].(string)
-		return &middleware.TokenClaims{
-			UserID:   userID,
-			Username: username,
-		}, nil
+// GetProfileHistory retrieves the change history for a user's profile
+func (s *ProfileService) GetProfileHistory(ctx context.Context, userID uuid.UUID) ([]*types.ProfileHistory, error) {
+	var history []models.ProfileHistory
+	if err := s.db.Where("user_id = ?", userID.String()).Find(&history).Error; err != nil {
+		return nil, err
 	}
 
-	return nil, ErrInvalidToken
+	// Convert to types.ProfileHistory
+	result := make([]*types.ProfileHistory, len(history))
+	for i, h := range history {
+		result[i] = &types.ProfileHistory{
+			ID:        uuid.MustParse(h.UserID), // Convert string to UUID
+			UserID:    uuid.MustParse(h.UserID),
+			Field:     h.Field,
+			OldValue:  h.OldValue,
+			NewValue:  h.NewValue,
+			ChangedAt: h.ChangedAt,
+			ChangedBy: h.ChangedBy,
+		}
+	}
+	return result, nil
 }
 
 // SanitizeProfile sanitizes profile data before sending to client
@@ -123,64 +145,13 @@ func (s *ProfileService) RecordProfileChange(userID, field, oldValue, newValue, 
 	return s.db.Create(history).Error
 }
 
-// GetProfileHistory retrieves the change history for a user's profile
-func (s *ProfileService) GetProfileHistory(userID uuid.UUID) ([]map[string]interface{}, error) {
-	var histories []models.ProfileHistory
-	if err := s.db.Where("user_id = ?", userID.String()).Order("changed_at desc").Find(&histories).Error; err != nil {
-		return nil, err
-	}
-
-	result := make([]map[string]interface{}, len(histories))
-	for i, h := range histories {
-		result[i] = map[string]interface{}{
-			"id":         h.ID,
-			"user_id":    h.UserID,
-			"field":      h.Field,
-			"old_value":  h.OldValue,
-			"new_value":  h.NewValue,
-			"changed_at": h.ChangedAt,
-			"changed_by": h.ChangedBy,
-		}
-	}
-
-	return result, nil
-}
-
-// GetUserProfile retrieves a user's profile
-func (s *ProfileService) GetUserProfile(userID uuid.UUID) (*models.UserProfile, error) {
+// GetUserProfile retrieves a user's profile by username
+func (s *ProfileService) GetUserProfile(username string) (*models.UserProfile, error) {
 	var profile models.UserProfile
-	if err := s.db.Where("user_id = ?", userID).First(&profile).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Create a new profile if it doesn't exist
-			profile = models.UserProfile{
-				UserID: userID,
-			}
-			if err := s.db.Create(&profile).Error; err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
+	if err := s.db.Joins("JOIN users ON users.id = user_profiles.user_id").
+		Where("users.username = ?", username).
+		First(&profile).Error; err != nil {
+		return nil, err
 	}
 	return &profile, nil
-}
-
-// UpdateUserProfile updates a user's profile
-func (s *ProfileService) UpdateUserProfile(userID uuid.UUID, profile *models.UserProfile) error {
-	return s.db.Model(&models.UserProfile{}).Where("user_id = ?", userID).Updates(profile).Error
-}
-
-func (s *ProfileService) Logout(userID uuid.UUID) error {
-	// In a real application, you might want to invalidate the user's session or token
-	// For now, we'll just return nil as the token invalidation is handled by the client
-	return nil
-}
-
-// GetUserRecipes returns all recipes created by the given user
-func (s *ProfileService) GetUserRecipes(userID uuid.UUID) ([]models.Recipe, error) {
-	var recipes []models.Recipe
-	if err := s.db.Where("user_id = ?", userID).Find(&recipes).Error; err != nil {
-		return nil, err
-	}
-	return recipes, nil
 }

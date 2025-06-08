@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,11 +63,27 @@ func NewLLMService() (*LLMService, error) {
 		apiURL = "https://api.deepseek.com/v1/chat/completions"
 	}
 
-	// Initialize Redis client
+	// Initialize Redis client with environment variables
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = "localhost"
+	}
+	redisPort := os.Getenv("REDIS_PORT")
+	if redisPort == "" {
+		redisPort = "6379"
+	}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	redisDB := 0
+	if dbStr := os.Getenv("REDIS_DB"); dbStr != "" {
+		if db, err := strconv.Atoi(dbStr); err == nil {
+			redisDB = db
+		}
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     "redis:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
+		Addr:     fmt.Sprintf("%s:%s", redisHost, redisPort),
+		Password: redisPassword,
+		DB:       redisDB,
 	})
 
 	return &LLMService{
@@ -148,6 +165,7 @@ type RecipeDraft struct {
 	Carbs        float64      `json:"carbs"`
 	Fat          float64      `json:"fat"`
 	UserID       string       `json:"user_id"`
+	Embedding    []float32    `json:"embedding"`
 }
 
 // SaveDraft saves a recipe draft to Redis

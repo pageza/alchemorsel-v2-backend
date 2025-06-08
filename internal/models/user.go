@@ -24,10 +24,9 @@ type UserProfile struct {
 	ID                uuid.UUID      `gorm:"type:uuid;primarykey;default:gen_random_uuid()" json:"id"`
 	UserID            uuid.UUID      `gorm:"type:uuid;not null;uniqueIndex" json:"user_id"`
 	Username          string         `gorm:"size:50;not null;uniqueIndex" json:"username"`
-	Email             string         `gorm:"size:255;not null" json:"email"`
 	Bio               string         `gorm:"type:text" json:"bio"`
 	ProfilePictureURL string         `gorm:"size:255" json:"profile_picture_url"`
-	PrivacyLevel      string         `gorm:"type:privacy_level;not null;default:'private'" json:"privacy_level"`
+	PrivacyLevel      string         `gorm:"size:50;not null;default:'private'" json:"privacy_level"`
 	CreatedAt         time.Time      `json:"created_at"`
 	UpdatedAt         time.Time      `json:"updated_at"`
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`

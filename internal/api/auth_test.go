@@ -7,120 +7,147 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	"context"
+	"fmt"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
+	"github.com/pageza/alchemorsel-v2/backend/internal/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func setupAuthDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	ctx := context.Background()
+
+	// Create PostgreSQL container
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "pgvector/pgvector:pg16",
+			ExposedPorts: []string{"5432/tcp"},
+			Env: map[string]string{
+				"POSTGRES_USER":     "testuser",
+				"POSTGRES_PASSWORD": "testpass",
+				"POSTGRES_DB":       "testdb",
+			},
+			WaitingFor: wait.ForAll(
+				wait.ForListeningPort("5432/tcp"),
+				wait.ForLog("database system is ready to accept connections"),
+			).WithStartupTimeout(60 * time.Second),
+		},
+		Started: true,
+	})
 	if err != nil {
-		t.Fatalf("failed to open db: %v", err)
+		t.Fatalf("failed to start container: %v", err)
 	}
-	createUsers := `CREATE TABLE users (
-        id TEXT PRIMARY KEY,
-        created_at DATETIME,
-        updated_at DATETIME,
-        deleted_at DATETIME,
-        name TEXT,
-        email TEXT UNIQUE,
-        password_hash TEXT
-    );`
-	if err := db.Exec(createUsers).Error; err != nil {
-		t.Fatalf("failed to create users table: %v", err)
+
+	// Get container host and port
+	host, err := container.Host(ctx)
+	if err != nil {
+		t.Fatalf("failed to get container host: %v", err)
 	}
-	createProfiles := `CREATE TABLE user_profiles (
-        id TEXT PRIMARY KEY,
-        created_at DATETIME,
-        updated_at DATETIME,
-        deleted_at DATETIME,
-        user_id TEXT,
-        username TEXT,
-        email TEXT,
-        bio TEXT,
-        profile_picture_url TEXT,
-        privacy_level TEXT
-    );`
-	if err := db.Exec(createProfiles).Error; err != nil {
-		t.Fatalf("failed to create user_profiles table: %v", err)
+	mappedPort, err := container.MappedPort(ctx, "5432")
+	if err != nil {
+		t.Fatalf("failed to get container port: %v", err)
 	}
-	createPrefs := `CREATE TABLE dietary_preferences (
-        id TEXT PRIMARY KEY,
-        created_at DATETIME,
-        updated_at DATETIME,
-        deleted_at DATETIME,
-        user_id TEXT,
-        preference_type TEXT,
-        custom_name TEXT
-    );`
-	if err := db.Exec(createPrefs).Error; err != nil {
-		t.Fatalf("failed to create dietary_preferences table: %v", err)
+
+	// Connect to database
+	dsn := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=disable",
+		host, mappedPort.Port())
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("failed to connect to database: %v", err)
 	}
-	createAllergens := `CREATE TABLE allergens (
-        id TEXT PRIMARY KEY,
-        created_at DATETIME,
-        updated_at DATETIME,
-        deleted_at DATETIME,
-        user_id TEXT,
-        allergen_name TEXT,
-        severity_level INTEGER
-    );`
-	if err := db.Exec(createAllergens).Error; err != nil {
-		t.Fatalf("failed to create allergens table: %v", err)
+
+	// Install pgvector extension
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
+		t.Fatalf("failed to install pgvector extension: %v", err)
 	}
+
+	// Register cleanup
+	t.Cleanup(func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Errorf("failed to terminate container: %v", err)
+		}
+	})
+
 	return db
 }
 
-func TestRegisterMissingPrefs(t *testing.T) {
-	db := setupAuthDB(t)
-	svc := service.NewAuthService(db, "secret")
-	h := NewAuthHandler(svc)
-	router := gin.New()
-	v1 := router.Group("/api/v1")
-	h.RegisterRoutes(v1)
+func TestRegister(t *testing.T) {
+	SetupTestDB(t) // Initialize test database
+	router := SetupTestRouter(t)
 
-	body := `{"name":"Tester","email":"t@example.com","password":"password","username":"tester"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(body))
+	// Test registration
+	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewBufferString(`{
+		"email": "test@example.com",
+		"password": "testpassword123",
+		"username": "testuser"
+	}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400 got %d", w.Code)
-	}
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, response["user_id"])
 }
 
-func TestRegisterWithPrefs(t *testing.T) {
+func TestLogin(t *testing.T) {
 	db := setupAuthDB(t)
-	svc := service.NewAuthService(db, "secret")
-	h := NewAuthHandler(svc)
+	authService := service.NewAuthService(db, "test-secret")
 	router := gin.New()
-	v1 := router.Group("/api/v1")
-	h.RegisterRoutes(v1)
+	router.Use(gin.Recovery())
 
-	reqBody := map[string]interface{}{
-		"name":                "Tester",
-		"email":               "t2@example.com",
-		"password":            "password",
-		"username":            "tester2",
-		"dietary_preferences": []string{"vegan"},
-		"allergies":           []string{"peanuts"},
-	}
-	buf, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(buf))
+	// Register routes
+	router.POST("/api/v1/auth/login", func(c *gin.Context) {
+		var req struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		user, profile, err := authService.Login(c.Request.Context(), req.Email, req.Password)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		token, err := authService.GenerateToken(&types.TokenClaims{
+			UserID:   user.ID,
+			Username: profile.Username,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"user_id": user.ID,
+			"token":   token,
+		})
+	})
+
+	// Test login
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewBufferString(`{
+		"email": "test@example.com",
+		"password": "testpassword123"
+	}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200 got %d", w.Code)
-	}
-	var resp map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse resp: %v", err)
-	}
-	if resp["token"] == "" {
-		t.Fatalf("token missing")
-	}
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

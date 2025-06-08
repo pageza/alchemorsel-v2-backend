@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/internal/api"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 // SetupRouter configures the application routes
@@ -11,31 +12,51 @@ func SetupRouter(
 	authHandler *api.AuthHandler,
 	recipeHandler *api.RecipeHandler,
 	llmHandler *api.LLMHandler,
+	authService service.IAuthService,
 ) *gin.Engine {
 	router := gin.Default()
 
 	// CORS middleware
 	router.Use(middleware.CORS())
 
-	// Public routes
-	router.POST("/api/auth/login", authHandler.Login)
-	router.POST("/api/auth/register", authHandler.Register)
+	// API v1 routes
+	v1 := router.Group("/api/v1")
+
+	// Auth routes
+	auth := v1.Group("/auth")
+	{
+		auth.POST("/login", authHandler.Login)
+		auth.POST("/register", authHandler.Register)
+	}
 
 	// Protected routes
-	protected := router.Group("/api")
-	protected.Use(middleware.AuthMiddleware(authHandler.GetAuthService()))
+	protected := v1.Group("")
+	protected.Use(middleware.AuthMiddleware(authService))
 	{
+		// Profile routes
+		profile := protected.Group("/profile")
+		{
+			profile.GET("", authHandler.GetProfile)
+			profile.PUT("", authHandler.UpdateProfile)
+		}
+
 		// Recipe routes
-		protected.GET("/recipes", recipeHandler.ListRecipes)
-		protected.GET("/recipes/:id", recipeHandler.GetRecipe)
-		protected.POST("/recipes", recipeHandler.CreateRecipe)
-		protected.PUT("/recipes/:id", recipeHandler.UpdateRecipe)
-		protected.DELETE("/recipes/:id", recipeHandler.DeleteRecipe)
+		recipes := protected.Group("/recipes")
+		{
+			recipes.GET("", recipeHandler.ListRecipes)
+			recipes.GET("/:id", recipeHandler.GetRecipe)
+			recipes.POST("", recipeHandler.CreateRecipe)
+			recipes.PUT("/:id", recipeHandler.UpdateRecipe)
+			recipes.DELETE("/:id", recipeHandler.DeleteRecipe)
+		}
 
 		// LLM routes
-		protected.POST("/llm/query", llmHandler.Query)
-		protected.GET("/llm/drafts/:id", llmHandler.GetDraft)
-		protected.DELETE("/llm/drafts/:id", llmHandler.DeleteDraft)
+		llm := protected.Group("/llm")
+		{
+			llm.POST("/query", llmHandler.Query)
+			llm.GET("/drafts/:id", llmHandler.GetDraft)
+			llm.DELETE("/drafts/:id", llmHandler.DeleteDraft)
+		}
 	}
 
 	return router

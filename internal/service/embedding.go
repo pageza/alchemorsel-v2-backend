@@ -11,6 +11,12 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+// EmbeddingServiceInterface defines the interface for embedding services
+type EmbeddingServiceInterface interface {
+	GenerateEmbedding(text string) (pgvector.Vector, error)
+	GenerateEmbeddingFromRecipe(name, description string, ingredients []string, category string, dietary []string) (pgvector.Vector, error)
+}
+
 // EmbeddingService handles interactions with the OpenAI API for embeddings
 type EmbeddingService struct {
 	apiKey string

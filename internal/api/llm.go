@@ -4,41 +4,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 // LLMHandler handles LLM-related requests
 type LLMHandler struct {
 	db          *gorm.DB
-	llmService  *service.LLMService
+	llmService  service.LLMServiceInterface
 	authService *service.AuthService
 }
 
-// NewLLMHandler creates a new LLMHandler instance
-func NewLLMHandler(db *gorm.DB, authService *service.AuthService) (*LLMHandler, error) {
-	llmService, err := service.NewLLMService()
-	if err != nil {
-		return nil, err
+// NewLLMHandler creates a new LLM handler
+func NewLLMHandler(db *gorm.DB, authService *service.AuthService, llmService service.LLMServiceInterface) *LLMHandler {
+	var svc service.LLMServiceInterface
+	if llmService != nil {
+		svc = llmService
+	} else {
+		var err error
+		svc, err = service.NewLLMService()
+		if err != nil {
+			panic(err)
+		}
 	}
-
 	return &LLMHandler{
 		db:          db,
-		llmService:  llmService,
+		llmService:  svc,
 		authService: authService,
-	}, nil
+	}
+}
+
+// SetLLMService sets the LLM service (used for testing)
+func (h *LLMHandler) SetLLMService(service service.LLMServiceInterface) {
+	h.llmService = service
 }
 
 // RegisterRoutes registers the LLM routes
 func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 	llm := router.Group("/llm")
 	{
-		llm.POST("/query", middleware.AuthMiddleware(h.authService), h.Query)
+		llm.POST("/query", h.Query)
 	}
 }
 
@@ -51,86 +61,96 @@ type QueryRequest struct {
 
 // Query handles recipe generation and modification requests
 func (h *LLMHandler) Query(c *gin.Context) {
+	println("[DEBUG] LLMHandler.Query called")
 	var req QueryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fmt.Printf("[LLMHandler] Failed to bind JSON: %v\n", err)
+		if err.Error() == "EOF" || strings.Contains(err.Error(), "invalid character") {
+			fmt.Println("[LLMHandler] Responding 400: Invalid request body")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		fmt.Println("[LLMHandler] Responding 400:", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	fmt.Printf("[LLMHandler] Parsed QueryRequest: %+v\n", req)
 	userIDVal, exists := c.Get("user_id")
+	fmt.Printf("[LLMHandler] Context keys: %v\n", c.Keys)
 	if !exists {
-		fmt.Println("[LLMHandler] user_id missing from context. Unauthorized.")
+		fmt.Println("[LLMHandler] user_id missing from context. Responding 401 Unauthorized.")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	userID := userIDVal.(uuid.UUID).String()
-	fmt.Printf("[LLMHandler] user_id from context: %s\n", userID)
-	fmt.Printf("[LLMHandler] QueryRequest: %+v\n", req)
+	fmt.Printf("[LLMHandler] user_id value: %#v\n", userIDVal)
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		fmt.Printf("[LLMHandler] user_id is not uuid.UUID, got: %T\n", userIDVal)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	fmt.Printf("[LLMHandler] user_id string: %s\n", userID.String())
 
 	switch req.Intent {
 	case "generate":
+		fmt.Println("[LLMHandler] Intent: generate")
 		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, nil)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating recipe: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
+		fmt.Printf("[LLMHandler] Recipe JSON: %s\n", recipeJSON)
 		var recipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &recipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse recipe JSON: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
 			return
 		}
-
-		recipe.UserID = userID
+		recipe.UserID = userID.String()
 		if err := h.llmService.SaveDraft(c.Request.Context(), &recipe); err != nil {
 			fmt.Printf("[LLMHandler] Error saving draft: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
 		fmt.Printf("[LLMHandler] Successfully generated and saved draft. Recipe ID: %s\n", recipe.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   recipe,
 			"draft_id": recipe.ID,
 		})
-
+		fmt.Println("[LLMHandler] Responded 200 OK with recipe and draft_id.")
 	case "modify":
+		fmt.Println("[LLMHandler] Intent: modify")
 		if req.DraftID == "" {
-			fmt.Println("[LLMHandler] draft_id is required for modifications")
+			fmt.Println("[LLMHandler] draft_id is required for modifications. Responding 400.")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required for modifications"})
 			return
 		}
-
 		draft, err := h.llmService.GetDraft(c.Request.Context(), req.DraftID)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error getting draft: %v\n", err)
 			c.JSON(http.StatusNotFound, gin.H{"error": "draft not found"})
 			return
 		}
-
-		if draft.UserID != userID {
-			fmt.Printf("[LLMHandler] Unauthorized: draft.UserID=%s, userID=%s\n", draft.UserID, userID)
+		if draft.UserID != userID.String() {
+			fmt.Printf("[LLMHandler] Unauthorized: draft.UserID=%s, userID=%s\n", draft.UserID, userID.String())
 			c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized"})
 			return
 		}
-
 		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, draft)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating modified recipe: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
+		fmt.Printf("[LLMHandler] Modified Recipe JSON: %s\n", recipeJSON)
 		var updatedRecipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &updatedRecipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse modified recipe JSON: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
 			return
 		}
-
 		draft.Name = updatedRecipe.Name
 		draft.Description = updatedRecipe.Description
 		draft.Category = updatedRecipe.Category
@@ -143,21 +163,19 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		draft.Protein = updatedRecipe.Protein
 		draft.Carbs = updatedRecipe.Carbs
 		draft.Fat = updatedRecipe.Fat
-
 		if err := h.llmService.UpdateDraft(c.Request.Context(), draft); err != nil {
 			fmt.Printf("[LLMHandler] Error updating draft: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
 		fmt.Printf("[LLMHandler] Successfully modified and updated draft. Draft ID: %s\n", draft.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   draft,
 			"draft_id": draft.ID,
 		})
-
+		fmt.Println("[LLMHandler] Responded 200 OK with modified recipe and draft_id.")
 	default:
-		fmt.Printf("[LLMHandler] Invalid intent: %s\n", req.Intent)
+		fmt.Printf("[LLMHandler] Invalid intent: %s. Responding 400.\n", req.Intent)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid intent"})
 	}
 }

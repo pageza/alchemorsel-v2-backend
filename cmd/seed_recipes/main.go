@@ -127,7 +127,6 @@ func main() {
 		ID:                uuid.New(),
 		UserID:            userID,
 		Username:          fmt.Sprintf("testuser_%d", time.Now().Unix()),
-		Email:             user.Email,
 		Bio:               "Test user for recipe seeding",
 		ProfilePictureURL: "",
 		PrivacyLevel:      "public",

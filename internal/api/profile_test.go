@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,80 +10,55 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
-	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
+	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers/mocks"
+	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 	"github.com/stretchr/testify/mock"
 )
 
-type MockProfileService struct {
-	mock.Mock
-}
-
-func (m *MockProfileService) GetProfile(userID uuid.UUID) (*models.UserProfile, error) {
-	args := m.Called(userID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.UserProfile), args.Error(1)
-}
-
-func (m *MockProfileService) UpdateProfile(userID uuid.UUID, updates map[string]interface{}) error {
-	args := m.Called(userID, updates)
-	return args.Error(0)
-}
-
-func (m *MockProfileService) Logout(userID uuid.UUID) error {
-	args := m.Called(userID)
-	return args.Error(0)
-}
-
-func (m *MockProfileService) GetProfileHistory(userID uuid.UUID) ([]map[string]interface{}, error) {
-	args := m.Called(userID)
-	return args.Get(0).([]map[string]interface{}), args.Error(1)
-}
-
-func (m *MockProfileService) ValidateToken(token string) (*middleware.TokenClaims, error) {
-	args := m.Called(token)
-	return args.Get(0).(*middleware.TokenClaims), args.Error(1)
-}
-
-func (m *MockProfileService) GetUserRecipes(userID uuid.UUID) ([]models.Recipe, error) {
-	args := m.Called(userID)
-	return args.Get(0).([]models.Recipe), args.Error(1)
-}
-
 func TestGetProfile(t *testing.T) {
-	mockService := new(MockProfileService)
-	handler := NewProfileHandler(mockService)
+	// Setup
+	gin.SetMode(gin.TestMode)
+	mockAuthService := new(mocks.MockAuthService)
+	mockProfileService := new(mocks.MockProfileService)
+	profileHandler := NewProfileHandler(mockProfileService, mockAuthService)
 
 	// Create a test UUID
 	testUUID := uuid.New()
 
+	// Mock token validation
+	claims := &types.TokenClaims{
+		UserID:   testUUID,
+		Username: "testuser",
+	}
+	mockAuthService.On("ValidateToken", mock.Anything).Return(claims, nil)
+
 	// Mock data
 	expectedProfile := &models.UserProfile{
-		ID:       testUUID,
+		ID:       uuid.New(),
 		UserID:   testUUID,
 		Username: "testuser",
 		Bio:      "Test bio",
 	}
 
 	// Mock recipes
-	expectedRecipes := []models.Recipe{
-		{ID: uuid.New(), Name: "Test", Ingredients: model.JSONBStringArray{}, Instructions: model.JSONBStringArray{}, UserID: testUUID},
+	expectedRecipes := []*models.Recipe{
+		{ID: uuid.New(), Name: "Test", Ingredients: []string{}, Instructions: []string{}, UserID: testUUID},
 	}
 
 	// Setup mock expectations
-	mockService.On("GetProfile", testUUID).Return(expectedProfile, nil)
-	mockService.On("GetUserRecipes", testUUID).Return(expectedRecipes, nil)
+	mockProfileService.On("GetProfile", context.Background(), testUUID).Return(expectedProfile, nil)
+	mockProfileService.On("GetUserRecipes", context.Background(), testUUID).Return(expectedRecipes, nil)
 
 	// Create test request
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Set("user_id", testUUID)
+	c.Request = httptest.NewRequest(http.MethodGet, "/profile", nil)
+	c.Set("user_id", testUUID.String())
+	c.Set("username", "testuser")
 
 	// Call handler
-	handler.GetProfile(c)
+	profileHandler.GetProfile(c)
 
 	// Assert response
 	if w.Code != http.StatusOK {
@@ -102,29 +78,52 @@ func TestGetProfile(t *testing.T) {
 }
 
 func TestUpdateProfile(t *testing.T) {
-	mockService := new(MockProfileService)
-	handler := NewProfileHandler(mockService)
+	// Setup
+	gin.SetMode(gin.TestMode)
+	mockAuthService := new(mocks.MockAuthService)
+	mockProfileService := new(mocks.MockProfileService)
+	profileHandler := NewProfileHandler(mockProfileService, mockAuthService)
 
 	// Create a test UUID
 	testUUID := uuid.New()
 
-	// Test request body
-	requestBody := []byte(`{"username": "newusername", "bio": "New bio"}`)
+	// Mock token validation
+	claims := &types.TokenClaims{
+		UserID:   testUUID,
+		Username: "testuser",
+	}
+	mockAuthService.On("ValidateToken", mock.Anything).Return(claims, nil)
 
-	// Setup mock expectations
-	mockService.On("UpdateProfile", testUUID, mock.Anything).Return(nil)
+	// Set up the mock expectation
+	bio := "New bio"
+	expectedProfile := &models.UserProfile{
+		ID:       uuid.New(),
+		UserID:   testUUID,
+		Username: "newusername",
+		Bio:      bio,
+	}
+	mockProfileService.On("UpdateProfile", context.Background(), testUUID, mock.Anything).Return(expectedProfile, nil)
 
 	// Create test request
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Set("user_id", testUUID)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/profile", bytes.NewBuffer(requestBody))
 
-	// Call handler
-	handler.UpdateProfile(c)
-
-	// Assert response
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+	// Create test request
+	req := types.UpdateProfileRequest{
+		Username: "newusername",
+		Bio:      &bio,
 	}
+	jsonData, _ := json.Marshal(req)
+	c.Request = httptest.NewRequest(http.MethodPut, "/profile", bytes.NewBuffer(jsonData))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", testUUID.String())
+	c.Set("username", "testuser")
+
+	profileHandler.UpdateProfile(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	}
+
+	mockProfileService.AssertExpectations(t)
 }

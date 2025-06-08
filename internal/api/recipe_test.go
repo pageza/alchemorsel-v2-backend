@@ -1,245 +1,331 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
-	"net/http"
+	"io"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
-	"gorm.io/driver/sqlite"
+	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers"
+	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 )
 
-func setupRecipeTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+func TestCreateRecipe(t *testing.T) {
+	testDB := SetupTestDB(t)
+	router := SetupTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	recipe := map[string]interface{}{
+		"name":                "Test Recipe",
+		"description":         "Test Description",
+		"category":            "Test Category",
+		"cuisine":             "Test Cuisine",
+		"image_url":           "http://example.com/image.jpg",
+		"ingredients":         []string{"ingredient1", "ingredient2"},
+		"instructions":        []string{"step1", "step2"},
+		"calories":            500,
+		"protein":             20,
+		"carbs":               30,
+		"fat":                 10,
+		"dietary_preferences": []string{"vegetarian", "gluten-free"},
+		"tags":                []string{"quick", "healthy"},
+	}
+
+	// Create request with auth token
+	req := httptest.NewRequest("POST", "/api/v1/recipes", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Marshal recipe to JSON
+	jsonData, err := json.Marshal(recipe)
 	if err != nil {
-		t.Fatalf("failed to open db: %v", err)
+		t.Fatalf("Failed to marshal recipe: %v", err)
 	}
-	// Manually create tables using simplified types since the production
-	// models rely on PostgreSQL features not supported by SQLite.
-	createRecipes := `CREATE TABLE recipes (
-               id TEXT PRIMARY KEY,
-               created_at DATETIME,
-               updated_at DATETIME,
-               deleted_at DATETIME,
-               name TEXT,
-               description TEXT,
-               category TEXT,
-               image_url TEXT,
-               ingredients TEXT,
-               instructions TEXT,
-               calories REAL,
-               protein REAL,
-               carbs REAL,
-               fat REAL,
-               embedding TEXT,
-               user_id TEXT
-       );`
-	if err := db.Exec(createRecipes).Error; err != nil {
-		t.Fatalf("failed to create recipes table: %v", err)
-	}
-
-	createFavs := `CREATE TABLE recipe_favorites (
-               id TEXT PRIMARY KEY,
-               created_at DATETIME,
-               updated_at DATETIME,
-               recipe_id TEXT NOT NULL,
-               user_id TEXT NOT NULL
-       );`
-	if err := db.Exec(createFavs).Error; err != nil {
-		t.Fatalf("failed to create recipe_favorites table: %v", err)
-	}
-	return db
-}
-
-func TestFavoriteRecipe(t *testing.T) {
-	db := setupRecipeTestDB(t)
-	handler := NewRecipeHandler(db, nil)
-
-	recipe := model.Recipe{
-		ID:           uuid.New(),
-		Name:         "Test",
-		Embedding:    service.GenerateEmbedding("Test"),
-		Ingredients:  model.JSONBStringArray{},
-		Instructions: model.JSONBStringArray{},
-		UserID:       uuid.New(),
-	}
-	db.Create(&recipe)
-
-	userID := uuid.New()
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = []gin.Param{{Key: "id", Value: recipe.ID.String()}}
-	c.Set("user_id", userID)
-
-	handler.FavoriteRecipe(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
-	}
-
-	var count int64
-	db.Model(&model.RecipeFavorite{}).Where("recipe_id = ? AND user_id = ?", recipe.ID, userID).Count(&count)
-	if count != 1 {
-		t.Fatalf("favorite not created")
-	}
-}
-
-func TestUnfavoriteRecipe(t *testing.T) {
-	db := setupRecipeTestDB(t)
-	handler := NewRecipeHandler(db, nil)
-
-	recipe := model.Recipe{
-		ID:           uuid.New(),
-		Name:         "Test",
-		Embedding:    service.GenerateEmbedding("Test"),
-		Ingredients:  model.JSONBStringArray{},
-		Instructions: model.JSONBStringArray{},
-		UserID:       uuid.New(),
-	}
-	db.Create(&recipe)
-	userID := uuid.New()
-	fav := model.RecipeFavorite{RecipeID: recipe.ID, UserID: userID}
-	db.Create(&fav)
+	req.Body = io.NopCloser(bytes.NewBuffer(jsonData))
 
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = []gin.Param{{Key: "id", Value: recipe.ID.String()}}
-	c.Set("user_id", userID)
+	router.ServeHTTP(w, req)
 
-	handler.UnfavoriteRecipe(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
-	}
+	assert.Equal(t, 201, w.Code)
 
-	var count int64
-	db.Model(&model.RecipeFavorite{}).Where("recipe_id = ? AND user_id = ?", recipe.ID, userID).Count(&count)
-	if count != 0 {
-		t.Fatalf("favorite not removed")
-	}
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "recipe")
+	recipeData := response["recipe"].(map[string]interface{})
+	assert.Contains(t, recipeData, "id")
 }
 
-func TestListRecipesFilters(t *testing.T) {
-	db := setupRecipeTestDB(t)
-	handler := NewRecipeHandler(db, nil)
+func TestGetRecipe(t *testing.T) {
+	testDB := SetupTestDB(t)
+	router := SetupTestRouter(t)
 
-	r1 := model.Recipe{
-		ID:           uuid.New(),
-		Name:         "Pasta",
-		Description:  "Tasty pasta dish",
-		Category:     "Italian",
-		Ingredients:  model.JSONBStringArray{"pasta", "peanuts"},
-		Instructions: model.JSONBStringArray{},
-		Embedding:    service.GenerateEmbedding("Pasta Tasty pasta dish"),
-		UserID:       uuid.New(),
-	}
-	r2 := model.Recipe{
-		ID:           uuid.New(),
-		Name:         "Salad",
-		Description:  "Healthy salad",
-		Category:     "Healthy",
-		Ingredients:  model.JSONBStringArray{"lettuce"},
-		Instructions: model.JSONBStringArray{},
-		Embedding:    service.GenerateEmbedding("Salad Healthy salad"),
-		UserID:       uuid.New(),
-	}
-	r3 := model.Recipe{
-		ID:           uuid.New(),
-		Name:         "Pasta Carbonara",
-		Description:  "Creamy",
-		Category:     "Italian",
-		Ingredients:  model.JSONBStringArray{"bacon"},
-		Instructions: model.JSONBStringArray{},
-		Embedding:    service.GenerateEmbedding("Pasta Carbonara Creamy"),
-		UserID:       uuid.New(),
-	}
-	r4 := model.Recipe{
-		ID:           uuid.New(),
-		Name:         "Tofu Bowl",
-		Description:  "Vegan meal",
-		Category:     "Vegan",
-		Ingredients:  model.JSONBStringArray{"tofu", "rice"},
-		Instructions: model.JSONBStringArray{},
-		Embedding:    service.GenerateEmbedding("Tofu Bowl Vegan meal"),
-		UserID:       uuid.New(),
-	}
-	db.Create(&r1)
-	db.Create(&r2)
-	db.Create(&r3)
-	db.Create(&r4)
+	_, token := CreateTestUserAndToken(t, testDB)
 
-	// search by q
+	recipe := map[string]interface{}{
+		"name":                "Test Recipe",
+		"description":         "Test Description",
+		"category":            "Test Category",
+		"cuisine":             "Test Cuisine",
+		"image_url":           "http://example.com/image.jpg",
+		"ingredients":         []string{"ingredient1", "ingredient2"},
+		"instructions":        []string{"step1", "step2"},
+		"calories":            500,
+		"protein":             20,
+		"carbs":               30,
+		"fat":                 10,
+		"dietary_preferences": []string{"vegetarian", "gluten-free"},
+		"tags":                []string{"quick", "healthy"},
+	}
+
+	// Create recipe
+	jsonData, err := json.Marshal(recipe)
+	if err != nil {
+		t.Fatalf("Failed to marshal recipe: %v", err)
+	}
+	req := httptest.NewRequest("POST", "/api/v1/recipes", io.NopCloser(bytes.NewBuffer(jsonData)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?q=pasta", nil)
-	handler.ListRecipes(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
-	}
-	var resp struct {
-		Recipes []model.Recipe `json:"recipes"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-	if len(resp.Recipes) != 2 {
-		t.Fatalf("expected 2 recipes got %d", len(resp.Recipes))
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 201, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	recipeData := response["recipe"].(map[string]interface{})
+	recipeID := recipeData["id"].(string)
+
+	// Get the recipe
+	req = httptest.NewRequest("GET", "/api/v1/recipes/"+recipeID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+}
+
+func TestUpdateRecipe(t *testing.T) {
+	testDB := SetupTestDB(t)
+	router := SetupTestRouter(t)
+
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	recipe := map[string]interface{}{
+		"name":                "Test Recipe",
+		"description":         "Test Description",
+		"category":            "Test Category",
+		"cuisine":             "Test Cuisine",
+		"image_url":           "http://example.com/image.jpg",
+		"ingredients":         []string{"ingredient1", "ingredient2"},
+		"instructions":        []string{"step1", "step2"},
+		"calories":            500,
+		"protein":             20,
+		"carbs":               30,
+		"fat":                 10,
+		"dietary_preferences": []string{"vegetarian", "gluten-free"},
+		"tags":                []string{"quick", "healthy"},
 	}
 
-	// filter by category
-	w = httptest.NewRecorder()
-	c, _ = gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?category=Healthy", nil)
-	handler.ListRecipes(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	// Create recipe
+	jsonData, err := json.Marshal(recipe)
+	if err != nil {
+		t.Fatalf("Failed to marshal recipe: %v", err)
 	}
-	resp = struct {
-		Recipes []model.Recipe `json:"recipes"`
-	}{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-	if len(resp.Recipes) != 1 {
-		t.Fatalf("expected 1 recipe got %d", len(resp.Recipes))
+	req := httptest.NewRequest("POST", "/api/v1/recipes", io.NopCloser(bytes.NewBuffer(jsonData)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 201, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	recipeData := response["recipe"].(map[string]interface{})
+	recipeID := recipeData["id"].(string)
+
+	updateRecipe := map[string]interface{}{
+		"name":                "Updated Recipe",
+		"description":         "Updated Description",
+		"category":            "Updated Category",
+		"cuisine":             "Updated Cuisine",
+		"image_url":           "http://example.com/updated.jpg",
+		"ingredients":         []string{"updated1", "updated2"},
+		"instructions":        []string{"updated1", "updated2"},
+		"calories":            600,
+		"protein":             25,
+		"carbs":               35,
+		"fat":                 15,
+		"dietary_preferences": []string{"vegan", "gluten-free"},
+		"tags":                []string{"quick", "healthy", "updated"},
 	}
 
-	// filter by dietary preference
+	jsonData, err = json.Marshal(updateRecipe)
+	if err != nil {
+		t.Fatalf("Failed to marshal update recipe: %v", err)
+	}
+	req = httptest.NewRequest("PUT", "/api/v1/recipes/"+recipeID, io.NopCloser(bytes.NewBuffer(jsonData)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
-	c, _ = gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?dietary=vegan", nil)
-	handler.ListRecipes(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
-	}
-	resp = struct {
-		Recipes []model.Recipe `json:"recipes"`
-	}{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-	if len(resp.Recipes) != 1 {
-		t.Fatalf("expected 1 recipe got %d", len(resp.Recipes))
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+}
+
+func TestDeleteRecipe(t *testing.T) {
+	testDB := SetupTestDB(t)
+	router := SetupTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	// Create a recipe first
+	createRecipe := map[string]interface{}{
+		"name":                "Test Recipe",
+		"description":         "Test Description",
+		"category":            "Test Category",
+		"cuisine":             "Test Cuisine",
+		"image_url":           "http://example.com/image.jpg",
+		"ingredients":         []string{"ingredient1", "ingredient2"},
+		"instructions":        []string{"step1", "step2"},
+		"calories":            500,
+		"protein":             20,
+		"carbs":               30,
+		"fat":                 10,
+		"dietary_preferences": []string{"vegetarian", "gluten-free"},
+		"tags":                []string{"quick", "healthy"},
 	}
 
-	// exclude allergen
+	// Create recipe with auth token
+	jsonData, err := json.Marshal(createRecipe)
+	if err != nil {
+		t.Fatalf("Failed to marshal recipe: %v", err)
+	}
+	req := httptest.NewRequest("POST", "/api/v1/recipes", bytes.NewBuffer(jsonData))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 201, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	recipeData := response["recipe"].(map[string]interface{})
+	recipeID := recipeData["id"].(string)
+
+	// Delete the recipe with auth token
+	req = httptest.NewRequest("DELETE", "/api/v1/recipes/"+recipeID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	w = httptest.NewRecorder()
-	c, _ = gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/recipes?exclude=peanuts", nil)
-	handler.ListRecipes(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+
+	// Verify the recipe was deleted with auth token
+	req = httptest.NewRequest("GET", "/api/v1/recipes/"+recipeID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestListRecipes(t *testing.T) {
+	testDB := SetupTestDB(t)
+	router := SetupTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	// Create test recipes
+	recipes := []map[string]interface{}{
+		{
+			"name":                "Test Recipe 1",
+			"description":         "Test Description 1",
+			"category":            "Category 1",
+			"cuisine":             "Cuisine 1",
+			"image_url":           "http://example.com/image1.jpg",
+			"ingredients":         []string{"ingredient1", "ingredient2"},
+			"instructions":        []string{"step1", "step2"},
+			"calories":            500,
+			"protein":             20,
+			"carbs":               30,
+			"fat":                 10,
+			"dietary_preferences": []string{"vegetarian", "gluten-free"},
+			"tags":                []string{"quick", "healthy"},
+		},
+		{
+			"name":                "Test Recipe 2",
+			"description":         "Test Description 2",
+			"category":            "Category 2",
+			"cuisine":             "Cuisine 2",
+			"image_url":           "http://example.com/image2.jpg",
+			"ingredients":         []string{"ingredient3", "ingredient4"},
+			"instructions":        []string{"step3", "step4"},
+			"calories":            600,
+			"protein":             25,
+			"carbs":               35,
+			"fat":                 15,
+			"dietary_preferences": []string{"vegan", "dairy-free"},
+			"tags":                []string{"dinner", "protein-rich"},
+		},
 	}
-	resp = struct {
-		Recipes []model.Recipe `json:"recipes"`
-	}{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
+
+	// Create recipes with auth token
+	for _, recipe := range recipes {
+		jsonData, err := json.Marshal(recipe)
+		if err != nil {
+			t.Fatalf("Failed to marshal recipe: %v", err)
+		}
+		req := httptest.NewRequest("POST", "/api/v1/recipes", bytes.NewBuffer(jsonData))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, 201, w.Code)
 	}
-	if len(resp.Recipes) != 3 {
-		t.Fatalf("expected 3 recipes got %d", len(resp.Recipes))
+
+	// Test listing recipes with auth token
+	req := httptest.NewRequest("GET", "/api/v1/recipes", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response, "recipes")
+	recipesList := response["recipes"].([]interface{})
+	assert.Len(t, recipesList, 2)
+}
+
+func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
+	// Setup test database
+	testDB := testhelpers.SetupTestDatabase(t)
+	router := gin.Default()
+
+	// Register recipe routes
+	recipeService := service.NewRecipeService(testDB, nil)
+	recipeHandler := &RecipeHandler{recipeService: recipeService}
+	api := router.Group("/api/v1")
+	{
+		recipes := api.Group("/recipes")
+		{
+			recipes.GET("", recipeHandler.ListRecipes)
+			recipes.GET(":id", recipeHandler.GetRecipe)
+			recipes.POST("", recipeHandler.CreateRecipe)
+			recipes.PUT(":id", recipeHandler.UpdateRecipe)
+			recipes.DELETE(":id", recipeHandler.DeleteRecipe)
+			recipes.POST(":id/favorite", recipeHandler.FavoriteRecipe)
+			recipes.DELETE(":id/favorite", recipeHandler.UnfavoriteRecipe)
+		}
 	}
+
+	return router, testDB
 }

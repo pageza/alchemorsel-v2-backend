@@ -9,6 +9,20 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+-- Create dietary preference type enum
+CREATE TYPE dietary_preference_type AS ENUM (
+    'vegetarian',
+    'vegan',
+    'pescatarian',
+    'gluten-free',
+    'dairy-free',
+    'nut-free',
+    'soy-free',
+    'egg-free',
+    'shellfish-free',
+    'custom'
+);
+
 -- Create users table
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -32,19 +46,47 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
     user_id UUID NOT NULL REFERENCES users(id),
-    height FLOAT,
-    weight FLOAT,
-    age INTEGER,
-    gender VARCHAR(50),
-    activity_level VARCHAR(50),
-    dietary_preferences JSONB,
-    allergies JSONB,
-    goals JSONB,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    bio TEXT,
+    profile_picture_url VARCHAR(255),
+    privacy_level VARCHAR(50) NOT NULL DEFAULT 'private',
     UNIQUE(user_id)
 );
 
 CREATE TRIGGER update_user_profiles_updated_at
     BEFORE UPDATE ON user_profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create dietary preferences table
+CREATE TABLE IF NOT EXISTS dietary_preferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    user_id UUID NOT NULL REFERENCES users(id),
+    preference_type dietary_preference_type NOT NULL,
+    custom_name VARCHAR(50)
+);
+
+CREATE TRIGGER update_dietary_preferences_updated_at
+    BEFORE UPDATE ON dietary_preferences
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create allergens table
+CREATE TABLE IF NOT EXISTS allergens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    user_id UUID NOT NULL REFERENCES users(id),
+    allergen_name VARCHAR(50) NOT NULL,
+    severity_level INTEGER NOT NULL
+);
+
+CREATE TRIGGER update_allergens_updated_at
+    BEFORE UPDATE ON allergens
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
