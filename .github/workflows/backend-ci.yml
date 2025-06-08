@@ -2,6 +2,7 @@ name: Backend CI
 
 # Trigger workflow on push to codex-1 branch and pull requests
 # This workflow runs tests and linting for the backend
+# Because I hate myself
 on:
   push:
     branches: [ codex-1 ]
