@@ -1,5 +1,6 @@
 name: Backend CI
 
+# Trigger workflow on push to codex-1 branch and pull requests
 on:
   push:
     branches: [ codex-1 ]
