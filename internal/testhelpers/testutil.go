@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,15 +33,51 @@ type TestDatabase struct {
 func SetupTestDB(t *testing.T) *gorm.DB {
 	ctx := context.Background()
 
-	// Create PostgreSQL container
+	// Check if we're in CI environment
+	if os.Getenv("CI") == "true" {
+		// In CI, use the service container with environment variables
+		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_USER"),
+			os.Getenv("DB_PASSWORD"),
+			os.Getenv("DB_NAME"))
+
+		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err != nil {
+			t.Fatalf("failed to connect to database: %v", err)
+		}
+
+		// Install pgvector extension
+		if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
+			t.Fatalf("failed to install pgvector extension: %v", err)
+		}
+
+		// Auto-migrate the schema
+		err = db.AutoMigrate(
+			&models.User{},
+			&models.UserProfile{},
+			&models.Recipe{},
+			&models.RecipeFavorite{},
+		)
+		if err != nil {
+			t.Fatalf("failed to migrate test database: %v", err)
+		}
+
+		return db
+	}
+
+	// Local development: use testcontainers with Docker secrets
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "pgvector/pgvector:pg16",
 			ExposedPorts: []string{"5432/tcp"},
 			Env: map[string]string{
-				"POSTGRES_USER":     "testuser",
-				"POSTGRES_PASSWORD": "testpass",
-				"POSTGRES_DB":       "testdb",
+				"POSTGRES_USER":     readSecret("test_db_user"),
+				"POSTGRES_PASSWORD": readSecret("test_db_password"),
+				"POSTGRES_DB":       readSecret("test_db_name"),
 			},
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
@@ -61,9 +100,14 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database
-	dsn := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=disable",
-		host, mappedPort.Port())
+	// Connect to database using Docker secrets
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host,
+		mappedPort.Port(),
+		readSecret("test_db_user"),
+		readSecret("test_db_password"),
+		readSecret("test_db_name"))
+
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
@@ -95,6 +139,16 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+// readSecret reads a Docker secret from the default secrets directory
+func readSecret(name string) string {
+	secretPath := filepath.Join("/run/secrets", name)
+	if data, err := os.ReadFile(secretPath); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	// Fallback to environment variable if secret is not found
+	return os.Getenv(strings.ToUpper(name))
 }
 
 // CreateTestUserAndToken creates a test user and returns their ID and a valid JWT token
