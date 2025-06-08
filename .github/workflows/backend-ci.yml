@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
+          POSTGRES_USER: runner
+          POSTGRES_PASSWORD: runner
+          POSTGRES_DB: test_db
         ports:
           - 5432:5432
         options: >-
@@ -31,9 +31,5 @@ jobs:
         run: |
           echo "Checking PostgreSQL service:"
           docker ps
-          echo "Environment variables:"
-          echo "TEST_DB_USER: ${{ secrets.TEST_DB_USER }}"
-          echo "TEST_DB_NAME: ${{ secrets.TEST_DB_NAME }}"
-          echo "TEST_DB_PASSWORD exists: ${{ secrets.TEST_DB_PASSWORD != '' }}"
-          echo "Testing connection:"
-          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }} -c "\l" || echo "Connection failed" 
+          echo "Testing connection with hardcoded values:"
+          PGPASSWORD=runner psql -h localhost -p 5432 -U runner -d test_db -c "\l" || echo "Connection failed" 
