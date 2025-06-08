@@ -57,7 +57,7 @@ jobs:
           psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests
-        run: go test ./...s
+        run: go test ./...
         env:
           CI: "true"
           DB_HOST: localhost
