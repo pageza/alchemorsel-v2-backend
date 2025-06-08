@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: runner
-          POSTGRES_PASSWORD: runner
-          POSTGRES_DB: test_db
+          POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
         ports:
           - 5432:5432
         options: >-
@@ -35,16 +35,29 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Debug environment
+      - name: Wait for PostgreSQL
         run: |
-          echo "Checking PostgreSQL service:"
-          docker ps
-          echo "Testing connection:"
-          PGPASSWORD=runner psql -h localhost -p 5432 -U runner -d test_db -c "\l" || echo "Connection failed"
+          for i in {1..30}; do
+            if PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} pg_isready -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }}; then
+              echo "PostgreSQL is ready!"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL to be ready... attempt $i"
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          exit 1
+
+      - name: Debug DB env
+        run: |
+          echo "User: ${{ secrets.TEST_DB_USER }}"
+          echo "DB: ${{ secrets.TEST_DB_NAME }}"
 
       - name: Install pgvector extension
+        env:
+          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
         run: |
-          PGPASSWORD=runner psql -h localhost -p 5432 -U runner -d test_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          psql -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }} -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests
         run: go test ./... -v
@@ -52,12 +65,12 @@ jobs:
           CI: "true"
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_USER: runner
-          DB_PASSWORD: runner
-          DB_NAME: test_db
+          DB_USER: ${{ secrets.TEST_DB_USER }}
+          DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          DB_NAME: ${{ secrets.TEST_DB_NAME }}
           DB_SSL_MODE: disable
-          JWT_SECRET: test_secret
-          LLM_API_KEY: test_key
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
 
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
