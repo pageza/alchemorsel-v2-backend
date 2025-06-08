@@ -36,6 +36,21 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 	// Check if we're in CI environment
 	if os.Getenv("CI") == "true" {
 		// In CI, use the service container with environment variables
+		requiredEnvVars := []string{
+			"DB_HOST",
+			"DB_PORT",
+			"DB_USER",
+			"DB_PASSWORD",
+			"DB_NAME",
+		}
+
+		// Check if all required environment variables are set
+		for _, envVar := range requiredEnvVars {
+			if os.Getenv(envVar) == "" {
+				t.Fatalf("required environment variable %s is not set", envVar)
+			}
+		}
+
 		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 			os.Getenv("DB_HOST"),
 			os.Getenv("DB_PORT"),
@@ -57,6 +72,7 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 				Logger: logger.Default.LogMode(logger.Info),
 			})
 			if err == nil {
+				t.Logf("Successfully connected to database on attempt %d", i+1)
 				break
 			}
 			t.Logf("Connection attempt %d failed: %v", i+1, err)
