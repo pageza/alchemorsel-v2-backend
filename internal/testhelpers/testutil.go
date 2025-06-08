@@ -43,11 +43,27 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 			os.Getenv("DB_PASSWORD"),
 			os.Getenv("DB_NAME"))
 
-		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Silent),
-		})
+		// Log connection attempt (without sensitive data)
+		t.Logf("Attempting to connect to database at %s:%s as user %s",
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_USER"))
+
+		// Try to connect with retries
+		var db *gorm.DB
+		var err error
+		for i := 0; i < 5; i++ {
+			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+				Logger: logger.Default.LogMode(logger.Info),
+			})
+			if err == nil {
+				break
+			}
+			t.Logf("Connection attempt %d failed: %v", i+1, err)
+			time.Sleep(2 * time.Second)
+		}
 		if err != nil {
-			t.Fatalf("failed to connect to database: %v", err)
+			t.Fatalf("failed to connect to database after 5 attempts: %v", err)
 		}
 
 		// Install pgvector extension
