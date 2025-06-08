@@ -37,8 +37,25 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }}; then
+              echo "PostgreSQL is ready!"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL to be ready... attempt $i"
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          exit 1
+
+      - name: Install pgvector extension
+        run: |
+          PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} psql -h localhost -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }} -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
       - name: Run tests
-        run: go test ./...
+        run: go test ./... -v
         env:
           CI: "true"
           DB_HOST: localhost
