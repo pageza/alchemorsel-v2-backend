@@ -28,6 +28,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Debug environment
+        env:
+          TEST_DB_USER: ${{ secrets.TEST_DB_USER }}
+          TEST_DB_NAME: ${{ secrets.TEST_DB_NAME }}
+          TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
         run: |
           echo "Checking PostgreSQL service:"
           docker ps
