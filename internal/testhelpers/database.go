@@ -21,12 +21,12 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 	if os.Getenv("CI") == "true" {
 		// Debug logging
 		t.Logf("CI environment detected")
-		t.Logf("DB_HOST: %s", os.Getenv("DB_HOST"))
-		t.Logf("DB_PORT: %s", os.Getenv("DB_PORT"))
-		t.Logf("DB_USER: %s", os.Getenv("DB_USER"))
-		t.Logf("DB_PASSWORD: %s", os.Getenv("DB_PASSWORD"))
-		t.Logf("DB_NAME: %s", os.Getenv("DB_NAME"))
-		t.Logf("DB_SSL_MODE: %s", os.Getenv("DB_SSL_MODE"))
+		t.Logf("[DEBUG] DB_HOST: %s", os.Getenv("DB_HOST"))
+		t.Logf("[DEBUG] DB_PORT: %s", os.Getenv("DB_PORT"))
+		t.Logf("[DEBUG] DB_USER: %s", os.Getenv("DB_USER"))
+		t.Logf("[DEBUG] DB_PASSWORD: %s", os.Getenv("DB_PASSWORD"))
+		t.Logf("[DEBUG] DB_NAME: %s", os.Getenv("DB_NAME"))
+		t.Logf("[DEBUG] DB_SSL_MODE: %s", os.Getenv("DB_SSL_MODE"))
 
 		// Validate required environment variables
 		requiredEnvVars := []string{"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}

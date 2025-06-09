@@ -48,6 +48,14 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 	// Check if we're in CI environment
 	if config.IsCI() {
 		// In CI, use the service container with environment variables
+		// Debug logging
+		t.Logf("[DEBUG] cfg.DBHost: %s", cfg.DBHost)
+		t.Logf("[DEBUG] cfg.DBPort: %s", cfg.DBPort)
+		t.Logf("[DEBUG] cfg.DBUser: %s", cfg.DBUser)
+		t.Logf("[DEBUG] cfg.DBPassword: %s", cfg.DBPassword)
+		t.Logf("[DEBUG] cfg.DBName: %s", cfg.DBName)
+		t.Logf("[DEBUG] cfg.DBSSLMode: %s", cfg.DBSSLMode)
+
 		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			cfg.DBHost,
 			cfg.DBPort,
