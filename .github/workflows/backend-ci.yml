@@ -28,6 +28,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -67,13 +77,24 @@ jobs:
         run: go test -v -cover ./...
         env:
           CI: "true"
+          # Server config
+          SERVER_HOST: localhost
+          SERVER_PORT: 8080
+          # Database config
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: ${{ vars.TEST_DB_USER }}
           DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           DB_NAME: ${{ vars.TEST_DB_NAME }}
           DB_SSL_MODE: disable
+          # Redis config
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
+          REDIS_URL: redis://:${{ secrets.TEST_REDIS_PASSWORD }}@localhost:6379/0
+          # Auth config
           JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          # LLM config
           LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
 
       - name: Run linter
