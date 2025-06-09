@@ -8,15 +8,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
-	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
-	"gorm.io/gorm"
 )
 
 func TestCreateRecipe(t *testing.T) {
-	testDB := SetupTestDB(t)
-	router, _ := setupRecipeTestRouter(t)
+	router, testDB := setupRecipeTestRouter(t)
 
 	// Create test user and get token
 	_, token := CreateTestUserAndToken(t, testDB)
@@ -63,8 +61,7 @@ func TestCreateRecipe(t *testing.T) {
 }
 
 func TestGetRecipe(t *testing.T) {
-	testDB := SetupTestDB(t)
-	router, _ := setupRecipeTestRouter(t)
+	router, testDB := setupRecipeTestRouter(t)
 
 	_, token := CreateTestUserAndToken(t, testDB)
 
@@ -111,8 +108,7 @@ func TestGetRecipe(t *testing.T) {
 }
 
 func TestUpdateRecipe(t *testing.T) {
-	testDB := SetupTestDB(t)
-	router, _ := setupRecipeTestRouter(t)
+	router, testDB := setupRecipeTestRouter(t)
 
 	_, token := CreateTestUserAndToken(t, testDB)
 
@@ -179,8 +175,7 @@ func TestUpdateRecipe(t *testing.T) {
 }
 
 func TestDeleteRecipe(t *testing.T) {
-	testDB := SetupTestDB(t)
-	router, _ := setupRecipeTestRouter(t)
+	router, testDB := setupRecipeTestRouter(t)
 
 	// Create test user and get token
 	_, token := CreateTestUserAndToken(t, testDB)
@@ -236,8 +231,7 @@ func TestDeleteRecipe(t *testing.T) {
 }
 
 func TestListRecipes(t *testing.T) {
-	testDB := SetupTestDB(t)
-	router, _ := setupRecipeTestRouter(t)
+	router, testDB := setupRecipeTestRouter(t)
 
 	// Create test user and get token
 	_, token := CreateTestUserAndToken(t, testDB)
@@ -305,17 +299,18 @@ func TestListRecipes(t *testing.T) {
 	assert.Len(t, recipesList, 2)
 }
 
-func setupRecipeTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
+func setupRecipeTestRouter(t *testing.T) (*gin.Engine, *TestDB) {
 	// Setup test database
-	testDB := testhelpers.SetupTestDatabase(t)
+	testDB := SetupTestDB(t)
 	router := gin.Default()
 
 	// Register recipe routes
-	recipeService := service.NewRecipeService(testDB, nil)
-	recipeHandler := &RecipeHandler{recipeService: recipeService}
+	recipeService := service.NewRecipeService(testDB.DB, nil)
+	recipeHandler := &RecipeHandler{recipeService: recipeService, authService: testDB.AuthService}
 	api := router.Group("/api/v1")
 	{
 		recipes := api.Group("/recipes")
+		recipes.Use(middleware.AuthMiddleware(testDB.AuthService))
 		{
 			recipes.GET("", recipeHandler.ListRecipes)
 			recipes.GET(":id", recipeHandler.GetRecipe)

@@ -8,73 +8,123 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	// Set test environment variables
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_PORT", "5432")
-	os.Setenv("DB_USER", "postgres")
-	os.Setenv("DB_PASSWORD", "postgres")
-	os.Setenv("DB_NAME", "alchemorsel")
-	os.Setenv("DB_SSL_MODE", "disable")
-	os.Setenv("JWT_SECRET", "test-secret")
-	os.Setenv("REDIS_URL", "redis://localhost:6379")
+	// Test CI environment with GitHub Actions secrets
+	t.Run("CI Environment with GitHub Actions Secrets", func(t *testing.T) {
+		// Set CI environment
+		os.Setenv("CI", "true")
+		defer os.Unsetenv("CI")
 
-	cfg, err := LoadConfig()
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg)
+		// Set required GitHub Actions variables
+		os.Setenv("SERVER_PORT", "8080")
+		os.Setenv("SERVER_HOST", "localhost")
+		os.Setenv("DB_HOST", "localhost")
+		os.Setenv("DB_PORT", "5432")
+		os.Setenv("DB_USER", "postgres")
+		os.Setenv("DB_NAME", "alchemorsel")
+		os.Setenv("DB_SSL_MODE", "disable")
+		os.Setenv("REDIS_HOST", "localhost")
+		os.Setenv("REDIS_PORT", "6379")
 
-	// Test database configuration
-	assert.Equal(t, "localhost", cfg.DBHost)
-	assert.Equal(t, "5432", cfg.DBPort)
-	assert.Equal(t, "postgres", cfg.DBUser)
-	assert.Equal(t, "postgres", cfg.DBPassword)
-	assert.Equal(t, "alchemorsel", cfg.DBName)
-	assert.Equal(t, "disable", cfg.DBSSLMode)
+		// Set required GitHub Actions secrets
+		os.Setenv("TEST_DB_PASSWORD", "postpass")
+		os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
+		os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
+		os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
 
-	// Test JWT configuration
-	assert.Equal(t, "test-secret", cfg.JWTSecret)
+		defer func() {
+			os.Unsetenv("SERVER_PORT")
+			os.Unsetenv("SERVER_HOST")
+			os.Unsetenv("DB_HOST")
+			os.Unsetenv("DB_PORT")
+			os.Unsetenv("DB_USER")
+			os.Unsetenv("DB_NAME")
+			os.Unsetenv("DB_SSL_MODE")
+			os.Unsetenv("REDIS_HOST")
+			os.Unsetenv("REDIS_PORT")
+			os.Unsetenv("TEST_DB_PASSWORD")
+			os.Unsetenv("TEST_JWT_SECRET")
+			os.Unsetenv("TEST_REDIS_PASSWORD")
+			os.Unsetenv("TEST_REDIS_URL")
+		}()
 
-	// Test Redis configuration
-	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
+		cfg, err := LoadConfig()
+		assert.NoError(t, err)
+		assert.NotNil(t, cfg)
+
+		// Test database configuration
+		assert.Equal(t, "localhost", cfg.DBHost)
+		assert.Equal(t, "5432", cfg.DBPort)
+		assert.Equal(t, "postgres", cfg.DBUser)
+		assert.Equal(t, "postpass", cfg.DBPassword)
+		assert.Equal(t, "alchemorsel", cfg.DBName)
+		assert.Equal(t, "disable", cfg.DBSSLMode)
+
+		// Test JWT configuration
+		assert.Equal(t, "test-jwt-secret", cfg.JWTSecret)
+
+		// Test Redis configuration
+		assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
+		assert.Equal(t, "test-redis-pass", cfg.RedisPassword)
+	})
 }
 
 func TestLoadConfigWithDefaults(t *testing.T) {
-	// Clear environment variables to test defaults
-	os.Unsetenv("DB_HOST")
-	os.Unsetenv("DB_PORT")
-	os.Unsetenv("DB_USER")
-	os.Unsetenv("DB_PASSWORD")
-	os.Unsetenv("DB_NAME")
-	os.Unsetenv("DB_SSL_MODE")
-	os.Unsetenv("JWT_SECRET")
-	os.Unsetenv("REDIS_URL")
+	// Test CI environment with GitHub Actions secrets
+	t.Run("CI Environment with GitHub Actions Secrets", func(t *testing.T) {
+		// Set CI environment
+		os.Setenv("CI", "true")
+		defer os.Unsetenv("CI")
 
-	os.Setenv("DB_USER", "postgres")
-	os.Setenv("DB_PASSWORD", "postgres")
-	os.Setenv("JWT_SECRET", "your-secret-key")
-	defer os.Unsetenv("DB_USER")
-	defer os.Unsetenv("DB_PASSWORD")
-	defer os.Unsetenv("JWT_SECRET")
+		// Set required GitHub Actions variables
+		os.Setenv("SERVER_PORT", "8080")
+		os.Setenv("SERVER_HOST", "localhost")
+		os.Setenv("DB_HOST", "localhost")
+		os.Setenv("DB_PORT", "5432")
+		os.Setenv("DB_USER", "postgres")
+		os.Setenv("DB_NAME", "alchemorsel")
+		os.Setenv("DB_SSL_MODE", "disable")
+		os.Setenv("REDIS_HOST", "localhost")
+		os.Setenv("REDIS_PORT", "6379")
 
-	cfg, err := LoadConfig()
-	if cfg != nil {
-		t.Logf("DB_USER in config: %q", cfg.DBUser)
-	}
-	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
-	}
+		// Set required GitHub Actions secrets
+		os.Setenv("TEST_DB_PASSWORD", "postpass")
+		os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
+		os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
+		os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
 
-	if cfg.DBUser != "postgres" {
-		t.Errorf("Expected DBUser to be 'postgres', got %q", cfg.DBUser)
-	}
-	if cfg.JWTSecret != "your-secret-key" {
-		t.Errorf("Expected JWTSecret to be 'your-secret-key', got %q", cfg.JWTSecret)
-	}
+		defer func() {
+			os.Unsetenv("SERVER_PORT")
+			os.Unsetenv("SERVER_HOST")
+			os.Unsetenv("DB_HOST")
+			os.Unsetenv("DB_PORT")
+			os.Unsetenv("DB_USER")
+			os.Unsetenv("DB_NAME")
+			os.Unsetenv("DB_SSL_MODE")
+			os.Unsetenv("REDIS_HOST")
+			os.Unsetenv("REDIS_PORT")
+			os.Unsetenv("TEST_DB_PASSWORD")
+			os.Unsetenv("TEST_JWT_SECRET")
+			os.Unsetenv("TEST_REDIS_PASSWORD")
+			os.Unsetenv("TEST_REDIS_URL")
+		}()
 
-	// Test default values
-	assert.Equal(t, "localhost", cfg.DBHost)
-	assert.Equal(t, "5432", cfg.DBPort)
-	assert.Equal(t, "postgres", cfg.DBPassword)
-	assert.Equal(t, "alchemorsel", cfg.DBName)
-	assert.Equal(t, "disable", cfg.DBSSLMode)
-	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
+		cfg, err := LoadConfig()
+		assert.NoError(t, err)
+		assert.NotNil(t, cfg)
+
+		// Test database configuration
+		assert.Equal(t, "localhost", cfg.DBHost)
+		assert.Equal(t, "5432", cfg.DBPort)
+		assert.Equal(t, "postgres", cfg.DBUser)
+		assert.Equal(t, "postpass", cfg.DBPassword)
+		assert.Equal(t, "alchemorsel", cfg.DBName)
+		assert.Equal(t, "disable", cfg.DBSSLMode)
+
+		// Test JWT configuration
+		assert.Equal(t, "test-jwt-secret", cfg.JWTSecret)
+
+		// Test Redis configuration
+		assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
+		assert.Equal(t, "test-redis-pass", cfg.RedisPassword)
+	})
 }

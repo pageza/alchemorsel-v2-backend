@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
@@ -39,57 +40,54 @@ func (db *TestDatabase) DB() *gorm.DB {
 func SetupTestDB(t *testing.T) *TestDatabase {
 	ctx := context.Background()
 
+	// Set CI environment and required secrets
+	os.Setenv("CI", "true")
+	os.Setenv("SERVER_PORT", "8080")
+	os.Setenv("SERVER_HOST", "localhost")
+	os.Setenv("DB_HOST", "localhost")
+	os.Setenv("DB_PORT", "5432")
+	os.Setenv("DB_USER", "postgres")
+	os.Setenv("DB_NAME", "alchemorsel")
+	os.Setenv("DB_SSL_MODE", "disable")
+	os.Setenv("REDIS_HOST", "localhost")
+	os.Setenv("REDIS_PORT", "6379")
+	os.Setenv("TEST_DB_PASSWORD", "postpass")
+	os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
+	os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
+	os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
+
+	defer func() {
+		os.Unsetenv("CI")
+		os.Unsetenv("SERVER_PORT")
+		os.Unsetenv("SERVER_HOST")
+		os.Unsetenv("DB_HOST")
+		os.Unsetenv("DB_PORT")
+		os.Unsetenv("DB_USER")
+		os.Unsetenv("DB_NAME")
+		os.Unsetenv("DB_SSL_MODE")
+		os.Unsetenv("REDIS_HOST")
+		os.Unsetenv("REDIS_PORT")
+		os.Unsetenv("TEST_DB_PASSWORD")
+		os.Unsetenv("TEST_JWT_SECRET")
+		os.Unsetenv("TEST_REDIS_PASSWORD")
+		os.Unsetenv("TEST_REDIS_URL")
+	}()
+
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		t.Fatalf("failed to load configuration: %v", err)
 	}
 
-	// Check if we're in CI environment
-	if config.IsCI() {
-		// In CI, use the service container with environment variables
-		// Debug logging
-		t.Logf("[DEBUG] cfg.DBHost: %s", cfg.DBHost)
-		t.Logf("[DEBUG] cfg.DBPort: %s", cfg.DBPort)
-		t.Logf("[DEBUG] cfg.DBUser: %s", cfg.DBUser)
-		t.Logf("[DEBUG] cfg.DBPassword: %s", cfg.DBPassword)
-		t.Logf("[DEBUG] cfg.DBName: %s", cfg.DBName)
-		t.Logf("[DEBUG] cfg.DBSSLMode: %s", cfg.DBSSLMode)
+	// Debug logging
+	t.Logf("[DEBUG] cfg.DBHost: %s", cfg.DBHost)
+	t.Logf("[DEBUG] cfg.DBPort: %s", cfg.DBPort)
+	t.Logf("[DEBUG] cfg.DBUser: %s", cfg.DBUser)
+	t.Logf("[DEBUG] cfg.DBPassword: %s", cfg.DBPassword)
+	t.Logf("[DEBUG] cfg.DBName: %s", cfg.DBName)
+	t.Logf("[DEBUG] cfg.DBSSLMode: %s", cfg.DBSSLMode)
 
-		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			cfg.DBHost,
-			cfg.DBPort,
-			cfg.DBUser,
-			cfg.DBPassword,
-			cfg.DBName,
-			cfg.DBSSLMode)
-
-		// Log connection attempt (without sensitive data)
-		t.Logf("Attempting to connect to database at %s:%s as user %s",
-			cfg.DBHost,
-			cfg.DBPort,
-			cfg.DBUser)
-
-		// Try to connect with retries
-		var db *gorm.DB
-		for i := 0; i < 5; i++ {
-			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-				Logger: logger.Default.LogMode(logger.Info),
-			})
-			if err == nil {
-				break
-			}
-			t.Logf("Connection attempt %d failed: %v", i+1, err)
-			time.Sleep(2 * time.Second)
-		}
-		if err != nil {
-			t.Fatalf("failed to connect to database after 5 attempts: %v", err)
-		}
-
-		return setupDatabase(t, db, cfg)
-	}
-
-	// Local development: use testcontainers
+	// Use testcontainers for both CI and local environments
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "pgvector/pgvector:pg16",
@@ -137,6 +135,12 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		cfg.DBPassword,
 		cfg.DBName,
 		cfg.DBSSLMode)
+
+	// Log connection attempt (without sensitive data)
+	t.Logf("Attempting to connect to database at %s:%s as user %s",
+		host,
+		mappedPort.Port(),
+		cfg.DBUser)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -221,10 +225,7 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 func CreateTestUserAndToken(t *testing.T, db *TestDatabase) (uuid.UUID, string) {
 	// Create a test user with configured password
 	userID := uuid.New()
-	password := os.Getenv("TEST_USER_PASSWORD")
-	if password == "" {
-		password = "testpassword123" // Fallback for local development
-	}
+	password := db.config.DBPassword // Use the configured password from secrets
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatalf("failed to hash password: %v", err)
@@ -250,7 +251,7 @@ func CreateTestUserAndToken(t *testing.T, db *TestDatabase) (uuid.UUID, string) 
 		t.Fatalf("failed to create test user profile: %v", err)
 	}
 
-	// Generate token
+	// Generate JWT token
 	token, err := db.authService.GenerateToken(&types.TokenClaims{
 		UserID:   user.ID,
 		Username: profile.Username,

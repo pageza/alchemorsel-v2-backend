@@ -26,17 +26,7 @@ var (
 	// Environment-specific requirements
 	requirements = map[Environment]ConfigRequirements{
 		Development: {
-			RequiredEnvVars: []string{
-				"SERVER_PORT",
-				"SERVER_HOST",
-				"DB_HOST",
-				"DB_PORT",
-				"DB_NAME",
-				"DB_SSL_MODE",
-				"REDIS_HOST",
-				"REDIS_PORT",
-				"REDIS_URL",
-			},
+			RequiredEnvVars: []string{}, // No environment variables allowed
 			RequiredSecrets: []string{
 				"db_user",
 				"db_password",
@@ -45,17 +35,7 @@ var (
 			},
 		},
 		Test: {
-			RequiredEnvVars: []string{
-				"SERVER_PORT",
-				"SERVER_HOST",
-				"DB_HOST",
-				"DB_PORT",
-				"DB_NAME",
-				"DB_SSL_MODE",
-				"REDIS_HOST",
-				"REDIS_PORT",
-				"REDIS_URL",
-			},
+			RequiredEnvVars: []string{}, // No environment variables allowed
 			RequiredSecrets: []string{
 				"db_user",
 				"db_password",
@@ -64,35 +44,11 @@ var (
 			},
 		},
 		CI: {
-			RequiredEnvVars: []string{
-				"SERVER_PORT",
-				"SERVER_HOST",
-				"DB_HOST",
-				"DB_PORT",
-				"DB_USER",
-				"DB_PASSWORD",
-				"DB_NAME",
-				"DB_SSL_MODE",
-				"REDIS_HOST",
-				"REDIS_PORT",
-				"REDIS_URL",
-				"JWT_SECRET",
-				"REDIS_PASSWORD",
-			},
-			RequiredSecrets: []string{}, // CI uses environment variables, not Docker secrets
+			RequiredEnvVars: []string{}, // No environment variables allowed
+			RequiredSecrets: []string{}, // GitHub Actions secrets are injected by CI system
 		},
 		Production: {
-			RequiredEnvVars: []string{
-				"SERVER_PORT",
-				"SERVER_HOST",
-				"DB_HOST",
-				"DB_PORT",
-				"DB_NAME",
-				"DB_SSL_MODE",
-				"REDIS_HOST",
-				"REDIS_PORT",
-				"REDIS_URL",
-			},
+			RequiredEnvVars: []string{}, // No environment variables allowed
 			RequiredSecrets: []string{
 				"db_user",
 				"db_password",
@@ -110,10 +66,10 @@ func ValidateConfig(cfg *Config) error {
 
 	var errors []string
 
-	// Validate environment variables
+	// Validate environment variables - none should be used
 	for _, envVar := range reqs.RequiredEnvVars {
-		if value := os.Getenv(envVar); value == "" {
-			errors = append(errors, fmt.Sprintf("required environment variable %s is not set", envVar))
+		if value := os.Getenv(envVar); value != "" {
+			errors = append(errors, fmt.Sprintf("environment variable %s should not be used", envVar))
 		}
 	}
 
@@ -128,15 +84,15 @@ func ValidateConfig(cfg *Config) error {
 
 	// Validate sensitive values
 	if env == CI {
-		// In CI, sensitive values must come from environment variables
+		// In CI, sensitive values must come from GitHub Actions secrets
 		if cfg.DBPassword == "" {
-			errors = append(errors, "DB_PASSWORD environment variable is required in CI environment")
+			errors = append(errors, "TEST_DB_PASSWORD GitHub Actions secret is required in CI environment")
 		}
 		if cfg.JWTSecret == "" {
-			errors = append(errors, "JWT_SECRET environment variable is required in CI environment")
+			errors = append(errors, "TEST_JWT_SECRET GitHub Actions secret is required in CI environment")
 		}
 		if cfg.RedisPassword == "" {
-			errors = append(errors, "REDIS_PASSWORD environment variable is required in CI environment")
+			errors = append(errors, "TEST_REDIS_PASSWORD GitHub Actions secret is required in CI environment")
 		}
 	} else {
 		// In other environments, sensitive values must come from Docker secrets

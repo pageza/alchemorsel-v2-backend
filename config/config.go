@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -66,91 +65,107 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// loadCIConfig loads configuration for CI environment
+// loadCIConfig loads configuration for CI environment using ONLY GitHub Actions secrets
 func loadCIConfig(cfg *Config) error {
-	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
+	// GitHub Actions variables
+	cfg.ServerPort = os.Getenv("SERVER_PORT")
+	cfg.ServerHost = os.Getenv("SERVER_HOST")
+	cfg.DBHost = os.Getenv("DB_HOST")
+	cfg.DBPort = os.Getenv("DB_PORT")
+	cfg.DBUser = os.Getenv("DB_USER")
+	cfg.DBName = os.Getenv("DB_NAME")
+	cfg.DBSSLMode = os.Getenv("DB_SSL_MODE")
+	cfg.RedisHost = os.Getenv("REDIS_HOST")
+	cfg.RedisPort = os.Getenv("REDIS_PORT")
 
-	cfg.ServerPort = getEnvOrDefault("SERVER_PORT", "8080")
-	cfg.ServerHost = getEnvOrDefault("SERVER_HOST", "0.0.0.0")
-	cfg.DBHost = getEnvOrDefault("DB_HOST", "localhost")
-	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
-	cfg.DBUser = getEnvOrDefault("DB_USER", "postgres")
-	cfg.DBPassword = getEnvOrDefault("DB_PASSWORD", "")
-	cfg.DBName = getEnvOrDefault("DB_NAME", "alchemorsel")
-	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
-	cfg.RedisHost = getEnvOrDefault("REDIS_HOST", "localhost")
-	cfg.RedisPort = getEnvOrDefault("REDIS_PORT", "6379")
-	cfg.RedisPassword = getEnvOrDefault("REDIS_PASSWORD", "")
-	cfg.RedisDB = redisDB
-	cfg.JWTSecret = getEnvOrDefault("JWT_SECRET", "")
-	cfg.RedisURL = getEnvOrDefault("REDIS_URL", "redis://localhost:6379")
+	// GitHub Actions secrets
+	cfg.DBPassword = os.Getenv("TEST_DB_PASSWORD")
+	cfg.JWTSecret = os.Getenv("TEST_JWT_SECRET")
+	cfg.RedisPassword = os.Getenv("TEST_REDIS_PASSWORD")
+	cfg.RedisURL = os.Getenv("TEST_REDIS_URL")
+	cfg.RedisDB = 0 // This is a constant, not a secret
 
 	return nil
 }
 
 // loadDevConfig loads configuration for development environment
 func loadDevConfig(cfg *Config) error {
-	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
+	secretsDir := os.Getenv("SECRETS_DIR")
+	if secretsDir == "" {
+		secretsDir = "/run/secrets"
+	}
 
-	cfg.ServerPort = getEnvOrDefault("SERVER_PORT", "8080")
-	cfg.ServerHost = getEnvOrDefault("SERVER_HOST", "0.0.0.0")
-	cfg.DBHost = getEnvOrDefault("DB_HOST", "localhost")
-	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
-	cfg.DBUser = getEnvOrSecret("DB_USER", "db_user")
-	cfg.DBPassword = getEnvOrSecret("DB_PASSWORD", "db_password")
-	cfg.DBName = getEnvOrDefault("DB_NAME", "alchemorsel")
-	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
-	cfg.RedisHost = getEnvOrDefault("REDIS_HOST", "localhost")
-	cfg.RedisPort = getEnvOrDefault("REDIS_PORT", "6379")
-	cfg.RedisPassword = getEnvOrSecret("REDIS_PASSWORD", "redis_password")
-	cfg.RedisDB = redisDB
-	cfg.JWTSecret = getEnvOrSecret("JWT_SECRET", "jwt_secret")
-	cfg.RedisURL = getEnvOrDefault("REDIS_URL", "redis://localhost:6379")
+	// Load secrets from Docker secrets
+	secrets := make(map[string]string)
+	secretFiles := []string{
+		"db_user",
+		"db_password",
+		"jwt_secret",
+		"redis_password",
+		"db_host",
+		"db_port",
+		"db_name",
+		"db_ssl_mode",
+		"redis_host",
+		"redis_port",
+		"redis_url",
+		"server_port",
+		"server_host",
+	}
+
+	for _, name := range secretFiles {
+		content, err := os.ReadFile(filepath.Join(secretsDir, name))
+		if err != nil {
+			return fmt.Errorf("failed to read secret %s: %v", name, err)
+		}
+		secrets[name] = strings.TrimSpace(string(content))
+	}
+
+	cfg.ServerPort = secrets["server_port"]
+	cfg.ServerHost = secrets["server_host"]
+	cfg.DBHost = secrets["db_host"]
+	cfg.DBPort = secrets["db_port"]
+	cfg.DBUser = secrets["db_user"]
+	cfg.DBPassword = secrets["db_password"]
+	cfg.DBName = secrets["db_name"]
+	cfg.DBSSLMode = secrets["db_ssl_mode"]
+	cfg.RedisHost = secrets["redis_host"]
+	cfg.RedisPort = secrets["redis_port"]
+	cfg.RedisPassword = secrets["redis_password"]
+	cfg.RedisDB = 0 // This is a constant, not a secret
+	cfg.JWTSecret = secrets["jwt_secret"]
+	cfg.RedisURL = secrets["redis_url"]
 
 	return nil
 }
 
-// loadProdConfig loads configuration for production environment
+// loadProdConfig loads configuration for production environment using ONLY Docker secrets
 func loadProdConfig(cfg *Config) error {
-	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
-
-	cfg.ServerPort = getEnvOrDefault("SERVER_PORT", "8080")
-	cfg.ServerHost = getEnvOrDefault("SERVER_HOST", "0.0.0.0")
-	cfg.DBHost = getEnvOrDefault("DB_HOST", "localhost")
-	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
-	cfg.DBUser = getEnvOrSecret("DB_USER", "db_user")
-	cfg.DBPassword = getEnvOrSecret("DB_PASSWORD", "db_password")
-	cfg.DBName = getEnvOrDefault("DB_NAME", "alchemorsel")
-	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
-	cfg.RedisHost = getEnvOrDefault("REDIS_HOST", "localhost")
-	cfg.RedisPort = getEnvOrDefault("REDIS_PORT", "6379")
-	cfg.RedisPassword = getEnvOrSecret("REDIS_PASSWORD", "redis_password")
-	cfg.RedisDB = redisDB
-	cfg.JWTSecret = getEnvOrSecret("JWT_SECRET", "jwt_secret")
-	cfg.RedisURL = getEnvOrDefault("REDIS_URL", "redis://localhost:6379")
+	cfg.ServerPort = readSecret("server_port")
+	cfg.ServerHost = readSecret("server_host")
+	cfg.DBHost = readSecret("db_host")
+	cfg.DBPort = readSecret("db_port")
+	cfg.DBUser = readSecret("db_user")
+	cfg.DBPassword = readSecret("db_password")
+	cfg.DBName = readSecret("db_name")
+	cfg.DBSSLMode = readSecret("db_ssl_mode")
+	cfg.RedisHost = readSecret("redis_host")
+	cfg.RedisPort = readSecret("redis_port")
+	cfg.RedisPassword = readSecret("redis_password")
+	cfg.RedisDB = 0 // This is a constant, not a secret
+	cfg.JWTSecret = readSecret("jwt_secret")
+	cfg.RedisURL = readSecret("redis_url")
 
 	return nil
 }
 
-// getEnvOrDefault gets an environment variable or returns a default value
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-// getEnvOrSecret tries to get an environment variable, then falls back to Docker secret
-func getEnvOrSecret(envKey, secretName string) string {
-	if value, exists := os.LookupEnv(envKey); exists {
-		return value
-	}
-	return readSecret(secretName)
-}
-
-// readSecret reads a Docker secret from the default secrets directory
+// readSecret reads a Docker secret from the secrets directory
 func readSecret(name string) string {
-	secretPath := filepath.Join("/run/secrets", name)
+	secretsDir := os.Getenv("SECRETS_DIR")
+	if secretsDir == "" {
+		secretsDir = "/run/secrets"
+	}
+	secretPath := filepath.Join(secretsDir, name)
 	if data, err := os.ReadFile(secretPath); err == nil {
 		return strings.TrimSpace(string(data))
 	}
