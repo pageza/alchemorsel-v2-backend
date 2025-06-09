@@ -13,31 +13,6 @@ jobs:
       contents: read
       packages: write
 
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: ${{ vars.TEST_DB_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ vars.TEST_DB_NAME }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -52,27 +27,6 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Wait for PostgreSQL
-        run: |
-          for i in {1..30}; do
-            if PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} pg_isready -h localhost -p 5432 -U ${{ vars.TEST_DB_USER }} -d ${{ vars.TEST_DB_NAME }}; then
-              echo "PostgreSQL is ready!"
-              exit 0
-            fi
-            echo "Waiting for PostgreSQL to be ready... attempt $i"
-            sleep 2
-          done
-          echo "PostgreSQL failed to start"
-          exit 1
-
-      - name: Install pgvector extension
-        env:
-          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          PGUSER: ${{ vars.TEST_DB_USER }}
-          PGDATABASE: ${{ vars.TEST_DB_NAME }}
-        run: |
-          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
       - name: Print environment for debugging
         run: env | sort
 
@@ -80,6 +34,9 @@ jobs:
         run: go test -v -cover ./...
         env:
           CI: "true"
+          # TestContainers config
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED: "true"
           # Server config
           SERVER_HOST: localhost
           SERVER_PORT: 8080
