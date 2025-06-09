@@ -131,6 +131,10 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 			i+1,
 			maxRetries)
 
+		// Create a new context with timeout for each attempt
+		connCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
@@ -138,9 +142,21 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 			// Verify connection is working
 			sqlDB, err := db.DB()
 			if err == nil {
-				err = sqlDB.Ping()
+				// Set connection pool settings
+				sqlDB.SetMaxOpenConns(1)
+				sqlDB.SetMaxIdleConns(1)
+				sqlDB.SetConnMaxLifetime(time.Minute * 5)
+				sqlDB.SetConnMaxIdleTime(time.Minute)
+
+				// Try to ping with context
+				err = sqlDB.PingContext(connCtx)
 				if err == nil {
-					break
+					// Additional verification query
+					var result int
+					err = db.Raw("SELECT 1").Scan(&result).Error
+					if err == nil && result == 1 {
+						break
+					}
 				}
 			}
 		}
