@@ -74,6 +74,9 @@ func TestGetProfile(t *testing.T) {
 	assert.Equal(t, expectedProfile.Username, resp.Profile.Username)
 	assert.Equal(t, expectedProfile.Bio, resp.Profile.Bio)
 	assert.Equal(t, len(expectedRecipes), len(resp.Recipes))
+
+	// Verify mock expectations
+	mockProfileService.AssertExpectations(t)
 }
 
 func TestUpdateProfile(t *testing.T) {
@@ -129,5 +132,6 @@ func TestUpdateProfile(t *testing.T) {
 	assert.Equal(t, expectedProfile.Username, resp.Username)
 	assert.Equal(t, expectedProfile.Bio, resp.Bio)
 
+	// Verify mock expectations
 	mockProfileService.AssertExpectations(t)
 }
