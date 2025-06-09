@@ -73,6 +73,9 @@ jobs:
         run: |
           psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
+      - name: Print environment for debugging
+        run: env | sort
+
       - name: Run tests
         run: go test -v -cover ./...
         env:
