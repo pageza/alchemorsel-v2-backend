@@ -38,7 +38,7 @@ func TestRegister(t *testing.T) {
 
 func TestLogin(t *testing.T) {
 	db := testhelpers.SetupTestDB(t)
-	authService := service.NewAuthService(db, "test-secret")
+	authService := service.NewAuthService(db.DB(), "test-secret")
 	router := gin.New()
 	router.Use(gin.Recovery())
 

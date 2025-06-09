@@ -16,7 +16,7 @@ import (
 
 func TestCreateRecipe(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := SetupTestRouter(t)
+	router, _ := setupRecipeTestRouter(t)
 
 	// Create test user and get token
 	_, token := CreateTestUserAndToken(t, testDB)
@@ -64,7 +64,7 @@ func TestCreateRecipe(t *testing.T) {
 
 func TestGetRecipe(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := SetupTestRouter(t)
+	router, _ := setupRecipeTestRouter(t)
 
 	_, token := CreateTestUserAndToken(t, testDB)
 
@@ -112,7 +112,7 @@ func TestGetRecipe(t *testing.T) {
 
 func TestUpdateRecipe(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := SetupTestRouter(t)
+	router, _ := setupRecipeTestRouter(t)
 
 	_, token := CreateTestUserAndToken(t, testDB)
 
@@ -180,7 +180,7 @@ func TestUpdateRecipe(t *testing.T) {
 
 func TestDeleteRecipe(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := SetupTestRouter(t)
+	router, _ := setupRecipeTestRouter(t)
 
 	// Create test user and get token
 	_, token := CreateTestUserAndToken(t, testDB)
@@ -237,7 +237,7 @@ func TestDeleteRecipe(t *testing.T) {
 
 func TestListRecipes(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := SetupTestRouter(t)
+	router, _ := setupRecipeTestRouter(t)
 
 	// Create test user and get token
 	_, token := CreateTestUserAndToken(t, testDB)
@@ -305,7 +305,7 @@ func TestListRecipes(t *testing.T) {
 	assert.Len(t, recipesList, 2)
 }
 
-func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
+func setupRecipeTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	// Setup test database
 	testDB := testhelpers.SetupTestDatabase(t)
 	router := gin.Default()

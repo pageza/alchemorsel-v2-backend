@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,44 +35,109 @@ type Config struct {
 	RedisURL string
 }
 
-// New creates a new Config instance with values from environment variables
-func New() *Config {
-	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
+// LoadConfig creates a new Config instance with values from environment variables or secrets
+func LoadConfig() (*Config, error) {
+	env := GetEnvironment()
+	cfg := &Config{}
 
-	return &Config{
-		// Server configuration
-		ServerPort: getEnv("SERVER_PORT", "8080"),
-		ServerHost: getEnv("SERVER_HOST", "0.0.0.0"),
-
-		// Database configuration
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "postgres"),
-		DBPassword: getEnv("DB_PASSWORD", "postgres"),
-		DBName:     getEnv("DB_NAME", "alchemorsel"),
-		DBSSLMode:  getEnv("DB_SSL_MODE", "disable"),
-
-		// Redis configuration
-		RedisHost:     getEnv("REDIS_HOST", "localhost"),
-		RedisPort:     getEnv("REDIS_PORT", "6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		RedisDB:       redisDB,
-
-		// JWT configuration
-		JWTSecret: getEnv("JWT_SECRET", "your-secret-key"),
-
-		// New fields
-		RedisURL: getEnv("REDIS_URL", "redis://localhost:6379"),
+	// Load configuration based on environment
+	switch env {
+	case CI:
+		if err := loadCIConfig(cfg); err != nil {
+			return nil, fmt.Errorf("failed to load CI configuration: %w", err)
+		}
+	case Development, Test:
+		if err := loadDevConfig(cfg); err != nil {
+			return nil, fmt.Errorf("failed to load development configuration: %w", err)
+		}
+	case Production:
+		if err := loadProdConfig(cfg); err != nil {
+			return nil, fmt.Errorf("failed to load production configuration: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("unknown environment: %s", env)
 	}
+
+	// Validate the configuration
+	if err := ValidateConfig(cfg); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+
+	return cfg, nil
 }
 
-// getEnv gets an environment variable or returns a default value
-func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
+// loadCIConfig loads configuration for CI environment
+func loadCIConfig(cfg *Config) error {
+	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
+
+	cfg.ServerPort = getEnvOrDefault("SERVER_PORT", "8080")
+	cfg.ServerHost = getEnvOrDefault("SERVER_HOST", "0.0.0.0")
+	cfg.DBHost = getEnvOrDefault("DB_HOST", "localhost")
+	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
+	cfg.DBUser = getEnvOrDefault("DB_USER", "postgres")
+	cfg.DBPassword = getEnvOrDefault("DB_PASSWORD", "")
+	cfg.DBName = getEnvOrDefault("DB_NAME", "alchemorsel")
+	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
+	cfg.RedisHost = getEnvOrDefault("REDIS_HOST", "localhost")
+	cfg.RedisPort = getEnvOrDefault("REDIS_PORT", "6379")
+	cfg.RedisPassword = getEnvOrDefault("REDIS_PASSWORD", "")
+	cfg.RedisDB = redisDB
+	cfg.JWTSecret = getEnvOrDefault("JWT_SECRET", "")
+	cfg.RedisURL = getEnvOrDefault("REDIS_URL", "redis://localhost:6379")
+
+	return nil
+}
+
+// loadDevConfig loads configuration for development environment
+func loadDevConfig(cfg *Config) error {
+	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
+
+	cfg.ServerPort = getEnvOrDefault("SERVER_PORT", "8080")
+	cfg.ServerHost = getEnvOrDefault("SERVER_HOST", "0.0.0.0")
+	cfg.DBHost = getEnvOrDefault("DB_HOST", "localhost")
+	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
+	cfg.DBUser = getEnvOrSecret("DB_USER", "db_user")
+	cfg.DBPassword = getEnvOrSecret("DB_PASSWORD", "db_password")
+	cfg.DBName = getEnvOrDefault("DB_NAME", "alchemorsel")
+	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
+	cfg.RedisHost = getEnvOrDefault("REDIS_HOST", "localhost")
+	cfg.RedisPort = getEnvOrDefault("REDIS_PORT", "6379")
+	cfg.RedisPassword = getEnvOrSecret("REDIS_PASSWORD", "redis_password")
+	cfg.RedisDB = redisDB
+	cfg.JWTSecret = getEnvOrSecret("JWT_SECRET", "jwt_secret")
+	cfg.RedisURL = getEnvOrDefault("REDIS_URL", "redis://localhost:6379")
+
+	return nil
+}
+
+// loadProdConfig loads configuration for production environment
+func loadProdConfig(cfg *Config) error {
+	redisDB, _ := strconv.Atoi(getEnvOrDefault("REDIS_DB", "0"))
+
+	cfg.ServerPort = getEnvOrDefault("SERVER_PORT", "8080")
+	cfg.ServerHost = getEnvOrDefault("SERVER_HOST", "0.0.0.0")
+	cfg.DBHost = getEnvOrDefault("DB_HOST", "localhost")
+	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
+	cfg.DBUser = getEnvOrSecret("DB_USER", "db_user")
+	cfg.DBPassword = getEnvOrSecret("DB_PASSWORD", "db_password")
+	cfg.DBName = getEnvOrDefault("DB_NAME", "alchemorsel")
+	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
+	cfg.RedisHost = getEnvOrDefault("REDIS_HOST", "localhost")
+	cfg.RedisPort = getEnvOrDefault("REDIS_PORT", "6379")
+	cfg.RedisPassword = getEnvOrSecret("REDIS_PASSWORD", "redis_password")
+	cfg.RedisDB = redisDB
+	cfg.JWTSecret = getEnvOrSecret("JWT_SECRET", "jwt_secret")
+	cfg.RedisURL = getEnvOrDefault("REDIS_URL", "redis://localhost:6379")
+
+	return nil
+}
+
+// getEnvOrDefault gets an environment variable or returns a default value
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return value
+	return defaultValue
 }
 
 // getEnvOrSecret tries to get an environment variable, then falls back to Docker secret
@@ -89,27 +155,4 @@ func readSecret(name string) string {
 		return strings.TrimSpace(string(data))
 	}
 	return ""
-}
-
-func LoadConfig() (*Config, error) {
-	cfg := &Config{
-		ServerPort: getEnvOrDefault("SERVER_PORT", "8080"),
-		ServerHost: getEnvOrDefault("SERVER_HOST", "0.0.0.0"),
-		DBHost:     getEnvOrDefault("DB_HOST", "localhost"),
-		DBPort:     getEnvOrDefault("DB_PORT", "5432"),
-		DBUser:     getEnvOrSecret("DB_USER", "db_user"),
-		DBPassword: getEnvOrSecret("DB_PASSWORD", "db_password"),
-		DBName:     getEnvOrDefault("DB_NAME", "alchemorsel"),
-		DBSSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
-		JWTSecret:  getEnvOrSecret("JWT_SECRET", "jwt_secret"),
-		RedisURL:   getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
-	}
-	return cfg, nil
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

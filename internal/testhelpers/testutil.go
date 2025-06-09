@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
+	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
@@ -23,35 +23,47 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// TestDatabase represents a test database with all necessary dependencies
+// TestDatabase represents a test database instance with its configuration
 type TestDatabase struct {
-	*gorm.DB
-	AuthService *service.AuthService
+	db          *gorm.DB
+	config      *config.Config
+	authService *service.AuthService
+}
+
+// DB returns the underlying *gorm.DB instance
+func (db *TestDatabase) DB() *gorm.DB {
+	return db.db
 }
 
 // SetupTestDB creates a new test database using PostgreSQL testcontainer
-func SetupTestDB(t *testing.T) *gorm.DB {
+func SetupTestDB(t *testing.T) *TestDatabase {
 	ctx := context.Background()
 
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("failed to load configuration: %v", err)
+	}
+
 	// Check if we're in CI environment
-	if os.Getenv("CI") == "true" {
+	if config.IsCI() {
 		// In CI, use the service container with environment variables
-		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-			os.Getenv("DB_HOST"),
-			os.Getenv("DB_PORT"),
-			os.Getenv("DB_USER"),
-			os.Getenv("DB_PASSWORD"),
-			os.Getenv("DB_NAME"))
+		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			cfg.DBHost,
+			cfg.DBPort,
+			cfg.DBUser,
+			cfg.DBPassword,
+			cfg.DBName,
+			cfg.DBSSLMode)
 
 		// Log connection attempt (without sensitive data)
 		t.Logf("Attempting to connect to database at %s:%s as user %s",
-			os.Getenv("DB_HOST"),
-			os.Getenv("DB_PORT"),
-			os.Getenv("DB_USER"))
+			cfg.DBHost,
+			cfg.DBPort,
+			cfg.DBUser)
 
 		// Try to connect with retries
 		var db *gorm.DB
-		var err error
 		for i := 0; i < 5; i++ {
 			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 				Logger: logger.Default.LogMode(logger.Info),
@@ -66,38 +78,31 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 			t.Fatalf("failed to connect to database after 5 attempts: %v", err)
 		}
 
-		// Install pgvector extension
-		if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
-			t.Fatalf("failed to install pgvector extension: %v", err)
-		}
-
-		// Auto-migrate the schema
-		err = db.AutoMigrate(
-			&models.User{},
-			&models.UserProfile{},
-			&models.Recipe{},
-			&models.RecipeFavorite{},
-		)
-		if err != nil {
-			t.Fatalf("failed to migrate test database: %v", err)
-		}
-
-		return db
+		return setupDatabase(t, db, cfg)
 	}
 
-	// Local development: use testcontainers with Docker secrets
+	// Local development: use testcontainers
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "pgvector/pgvector:pg16",
 			ExposedPorts: []string{"5432/tcp"},
 			Env: map[string]string{
-				"POSTGRES_USER":     readSecret("test_db_user"),
-				"POSTGRES_PASSWORD": readSecret("test_db_password"),
-				"POSTGRES_DB":       readSecret("test_db_name"),
+				"POSTGRES_USER":     cfg.DBUser,
+				"POSTGRES_PASSWORD": cfg.DBPassword,
+				"POSTGRES_DB":       cfg.DBName,
 			},
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
 				wait.ForLog("database system is ready to accept connections"),
+				wait.ForSQL("5432/tcp", "postgres", func(host string, port nat.Port) string {
+					return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+						cfg.DBUser,
+						cfg.DBPassword,
+						host,
+						port.Port(),
+						cfg.DBName,
+						cfg.DBSSLMode)
+				}),
 			).WithStartupTimeout(60 * time.Second),
 		},
 		Started: true,
@@ -116,35 +121,20 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database using Docker secrets
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+	// Connect to database
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		host,
 		mappedPort.Port(),
-		readSecret("test_db_user"),
-		readSecret("test_db_password"),
-		readSecret("test_db_name"))
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBName,
+		cfg.DBSSLMode)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("failed to connect to database: %v", err)
-	}
-
-	// Install pgvector extension
-	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
-		t.Fatalf("failed to install pgvector extension: %v", err)
-	}
-
-	// Auto-migrate the schema
-	err = db.AutoMigrate(
-		&models.User{},
-		&models.UserProfile{},
-		&models.Recipe{},
-		&models.RecipeFavorite{},
-	)
-	if err != nil {
-		t.Fatalf("failed to migrate test database: %v", err)
 	}
 
 	// Register cleanup
@@ -160,24 +150,73 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		<-ctx.Done()
 	})
 
-	return db
+	// Create the test database instance
+	testDB := &TestDatabase{
+		db:          db,
+		config:      cfg,
+		authService: service.NewAuthService(db, cfg.JWTSecret),
+	}
+
+	return testDB
 }
 
-// readSecret reads a Docker secret from the default secrets directory
-func readSecret(name string) string {
-	secretPath := filepath.Join("/run/secrets", name)
-	if data, err := os.ReadFile(secretPath); err == nil {
-		return strings.TrimSpace(string(data))
+// setupDatabase performs common database setup tasks
+func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase {
+	// Install pgvector extension
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
+		t.Fatalf("failed to install pgvector extension: %v", err)
 	}
-	// Fallback to environment variable if secret is not found
-	return os.Getenv(strings.ToUpper(name))
+
+	// Create dietary preference type enum
+	if err := db.Exec(`
+		DO $$ BEGIN
+			CREATE TYPE dietary_preference_type AS ENUM (
+				'vegetarian',
+				'vegan',
+				'pescatarian',
+				'gluten-free',
+				'dairy-free',
+				'nut-free',
+				'soy-free',
+				'egg-free',
+				'shellfish-free',
+				'custom'
+			);
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
+	`).Error; err != nil {
+		t.Fatalf("failed to create dietary preference type: %v", err)
+	}
+
+	// Auto-migrate the schema
+	err := db.AutoMigrate(
+		&models.User{},
+		&models.UserProfile{},
+		&models.Recipe{},
+		&models.RecipeFavorite{},
+		&models.DietaryPreference{},
+		&models.Allergen{},
+	)
+	if err != nil {
+		t.Fatalf("failed to migrate test database: %v", err)
+	}
+
+	return &TestDatabase{
+		db:          db,
+		config:      cfg,
+		authService: service.NewAuthService(db, cfg.JWTSecret),
+	}
 }
 
 // CreateTestUserAndToken creates a test user and returns their ID and a valid JWT token
 func CreateTestUserAndToken(t *testing.T, db *TestDatabase) (uuid.UUID, string) {
-	// Create a test user with a known password
+	// Create a test user with configured password
 	userID := uuid.New()
-	password := "testpassword123"
+	password := os.Getenv("TEST_USER_PASSWORD")
+	if password == "" {
+		password = "testpassword123" // Fallback for local development
+	}
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatalf("failed to hash password: %v", err)
@@ -189,7 +228,7 @@ func CreateTestUserAndToken(t *testing.T, db *TestDatabase) (uuid.UUID, string) 
 		Email:        fmt.Sprintf("testuser+%s@example.com", userID.String()),
 		PasswordHash: string(hashedPassword),
 	}
-	if err := db.DB.Create(&user).Error; err != nil {
+	if err := db.db.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 
@@ -199,19 +238,13 @@ func CreateTestUserAndToken(t *testing.T, db *TestDatabase) (uuid.UUID, string) 
 		UserID:   userID,
 		Username: fmt.Sprintf("testuser_%s", userID.String()),
 	}
-	if err := db.DB.Create(&profile).Error; err != nil {
+	if err := db.db.Create(&profile).Error; err != nil {
 		t.Fatalf("failed to create test user profile: %v", err)
 	}
 
-	// DEBUG: Print input values for Login
-	fmt.Printf("[DEBUG] Calling Login with email: %s, password: %s\n", user.Email, password)
-	loggedInUser, _, err := db.AuthService.Login(context.Background(), user.Email, password)
-	// DEBUG: Print output values for Login
-	fmt.Printf("[DEBUG] Login returned user: %+v, err: %v\n", loggedInUser, err)
-
 	// Generate token
-	token, err := db.AuthService.GenerateToken(&types.TokenClaims{
-		UserID:   loggedInUser.ID,
+	token, err := db.authService.GenerateToken(&types.TokenClaims{
+		UserID:   user.ID,
 		Username: profile.Username,
 	})
 	if err != nil {
