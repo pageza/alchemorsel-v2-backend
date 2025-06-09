@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,46 +20,40 @@ import (
 
 // SetupTestDatabase creates a test database instance using a containerized PostgreSQL with pgvector.
 func SetupTestDatabase(t *testing.T) *gorm.DB {
-	// Create a temporary directory for secrets
-	secretsDir, err := os.MkdirTemp("", "alchemorsel-test-secrets-*")
-	if err != nil {
-		t.Fatalf("failed to create temporary secrets directory: %v", err)
-	}
+	ctx := context.Background()
 
-	// Set the secrets directory environment variable
-	os.Setenv("SECRETS_DIR", secretsDir)
-	defer os.Unsetenv("SECRETS_DIR")
+	// Set CI environment and required secrets
+	os.Setenv("CI", "true")
+	os.Setenv("SERVER_PORT", "8080")
+	os.Setenv("SERVER_HOST", "localhost")
+	os.Setenv("DB_HOST", "localhost")
+	os.Setenv("DB_PORT", "5432")
+	os.Setenv("DB_USER", "postgres")
+	os.Setenv("DB_NAME", "alchemorsel")
+	os.Setenv("DB_SSL_MODE", "disable")
+	os.Setenv("REDIS_HOST", "localhost")
+	os.Setenv("REDIS_PORT", "6379")
+	os.Setenv("TEST_DB_PASSWORD", "postpass")
+	os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
+	os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
+	os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
 
-	// Clean up the temporary directory after the test
-	t.Cleanup(func() {
-		if err := os.RemoveAll(secretsDir); err != nil {
-			t.Errorf("failed to remove temporary secrets directory: %v", err)
-		}
-	})
-
-	// Write test secrets
-	secrets := map[string]string{
-		"db_user":        "postgres",
-		"db_password":    "postpass",
-		"jwt_secret":     "test-jwt-secret",
-		"redis_password": "test-redis-pass",
-		"db_host":        "localhost",
-		"db_port":        "5432",
-		"db_name":        "alchemorsel",
-		"db_ssl_mode":    "disable",
-		"redis_host":     "localhost",
-		"redis_port":     "6379",
-		"redis_url":      "redis://localhost:6379",
-		"server_port":    "8080",
-		"server_host":    "localhost",
-	}
-
-	for name, value := range secrets {
-		secretPath := filepath.Join(secretsDir, name)
-		if err := os.WriteFile(secretPath, []byte(value), 0644); err != nil {
-			t.Fatalf("failed to write secret %s: %v", name, err)
-		}
-	}
+	defer func() {
+		os.Unsetenv("CI")
+		os.Unsetenv("SERVER_PORT")
+		os.Unsetenv("SERVER_HOST")
+		os.Unsetenv("DB_HOST")
+		os.Unsetenv("DB_PORT")
+		os.Unsetenv("DB_USER")
+		os.Unsetenv("DB_NAME")
+		os.Unsetenv("DB_SSL_MODE")
+		os.Unsetenv("REDIS_HOST")
+		os.Unsetenv("REDIS_PORT")
+		os.Unsetenv("TEST_DB_PASSWORD")
+		os.Unsetenv("TEST_JWT_SECRET")
+		os.Unsetenv("TEST_REDIS_PASSWORD")
+		os.Unsetenv("TEST_REDIS_URL")
+	}()
 
 	// Load configuration
 	cfg, err := config.LoadConfig()
@@ -76,10 +69,7 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
 	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
 
-	// Use testcontainers for both CI and local environments
-	ctx := context.Background()
-
-	// Create PostgreSQL container
+	// Create PostgreSQL container with health checks
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "pgvector/pgvector:pg16",
@@ -119,26 +109,40 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host,
-		mappedPort.Port(),
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBName,
-		cfg.DBSSLMode)
+	// Connect to database with retries
+	var db *gorm.DB
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			host,
+			mappedPort.Port(),
+			cfg.DBUser,
+			cfg.DBPassword,
+			cfg.DBName,
+			cfg.DBSSLMode)
 
-	// Log connection attempt (without sensitive data)
-	t.Logf("Attempting to connect to database at %s:%s as user %s",
-		host,
-		mappedPort.Port(),
-		cfg.DBUser)
+		// Log connection attempt (without sensitive data)
+		t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
+			host,
+			mappedPort.Port(),
+			cfg.DBUser,
+			i+1,
+			maxRetries)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err == nil {
+			break
+		}
+
+		if i < maxRetries-1 {
+			t.Logf("Connection failed, retrying in 2 seconds...")
+			time.Sleep(2 * time.Second)
+		}
+	}
 	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
+		t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
 	}
 
 	// Install pgvector extension
