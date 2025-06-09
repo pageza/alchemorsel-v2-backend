@@ -69,7 +69,7 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
 	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
 
-	// Create PostgreSQL container with health checks
+	// Create PostgreSQL container with enhanced health checks
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "pgvector/pgvector:pg16",
@@ -91,7 +91,8 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 						cfg.DBName,
 						cfg.DBSSLMode)
 				}),
-			).WithStartupTimeout(60 * time.Second),
+				wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser}),
+			).WithStartupTimeout(120 * time.Second),
 		},
 		Started: true,
 	})
@@ -109,9 +110,10 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database with retries
+	// Connect to database with retries and exponential backoff
 	var db *gorm.DB
-	maxRetries := 5
+	maxRetries := 10
+	baseDelay := 1 * time.Second
 	for i := 0; i < maxRetries; i++ {
 		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			host,
@@ -133,12 +135,20 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		if err == nil {
-			break
+			// Verify connection is working
+			sqlDB, err := db.DB()
+			if err == nil {
+				err = sqlDB.Ping()
+				if err == nil {
+					break
+				}
+			}
 		}
 
 		if i < maxRetries-1 {
-			t.Logf("Connection failed, retrying in 2 seconds...")
-			time.Sleep(2 * time.Second)
+			delay := baseDelay * time.Duration(1<<uint(i))
+			t.Logf("Connection failed, retrying in %v...", delay)
+			time.Sleep(delay)
 		}
 	}
 	if err != nil {
@@ -187,7 +197,7 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 
 	// Register cleanup
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		if err := container.Terminate(ctx); err != nil {
