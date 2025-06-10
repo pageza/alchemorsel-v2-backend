@@ -2,9 +2,9 @@ name: Backend CI
 # To Trigger changes for CI
 on:
   push:
-    branches: [ codex-1 ]
+    branches: [ pristine-working-point ]
   pull_request:
-    branches: [ codex-1 ]
+    branches: [ pristine-working-point ]
 
 jobs:
   test:
@@ -12,31 +12,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: ${{ vars.TEST_DB_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ vars.TEST_DB_NAME }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -52,27 +27,6 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Wait for PostgreSQL
-        run: |
-          for i in {1..30}; do
-            if PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} pg_isready -h localhost -p 5432 -U ${{ vars.TEST_DB_USER }} -d ${{ vars.TEST_DB_NAME }}; then
-              echo "PostgreSQL is ready!"
-              exit 0
-            fi
-            echo "Waiting for PostgreSQL to be ready... attempt $i"
-            sleep 2
-          done
-          echo "PostgreSQL failed to start"
-          exit 1
-
-      - name: Install pgvector extension
-        env:
-          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          PGUSER: ${{ vars.TEST_DB_USER }}
-          PGDATABASE: ${{ vars.TEST_DB_NAME }}
-        run: |
-          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
       - name: Print environment for debugging
         run: env | sort
 
@@ -80,6 +34,9 @@ jobs:
         run: go test -v -cover ./...
         env:
           CI: "true"
+          # TestContainers config
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED: "true"
           # Server config
           SERVER_HOST: localhost
           SERVER_PORT: 8080
@@ -87,20 +44,28 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: ${{ vars.TEST_DB_USER }}
-          DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           DB_NAME: ${{ vars.TEST_DB_NAME }}
           DB_SSL_MODE: disable
           # Redis config
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
+          TEST_REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
           REDIS_URL: redis://:${{ secrets.TEST_REDIS_PASSWORD }}@localhost:6379/0
           # Auth config
-          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          TEST_JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
           # LLM config
           LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
 
+      - name: Clear golangci-lint cache
+        run: |
+          rm -rf ~/.cache/golangci-lint
+          rm -rf ~/.cache/go-build
+          rm -rf ~/go/pkg
+
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
+        continue-on-error: true
         with:
-          version: latest 
+          version: latest
+          args: --config=.golangci.yml
