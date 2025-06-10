@@ -38,19 +38,26 @@ func (db *TestDatabase) DB() *gorm.DB {
 
 // setupDatabase handles database initialization and migration
 func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase {
+	t.Log("[DEBUG] Starting database setup...")
+
 	// Create test database instance
 	testDB := &TestDatabase{
 		db:          db,
 		config:      cfg,
 		authService: service.NewAuthService(db, cfg.JWTSecret),
 	}
+	t.Log("[DEBUG] Test database instance created")
 
 	// Install pgvector extension
+	t.Log("[DEBUG] Installing pgvector extension...")
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		t.Logf("[ERROR] Failed to install pgvector extension: %v", err)
 		t.Fatalf("failed to install pgvector extension: %v", err)
 	}
+	t.Log("[DEBUG] pgvector extension installed successfully")
 
 	// Create dietary preference type enum
+	t.Log("[DEBUG] Creating dietary preference type enum...")
 	if err := db.Exec(`
 		DO $$ BEGIN
 			CREATE TYPE dietary_preference_type AS ENUM (
@@ -69,10 +76,15 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 			WHEN duplicate_object THEN null;
 		END $$;
 	`).Error; err != nil {
+		t.Logf("[ERROR] Failed to create dietary preference type: %v", err)
 		t.Fatalf("failed to create dietary preference type: %v", err)
 	}
+	t.Log("[DEBUG] Dietary preference type enum created successfully")
 
 	// Auto-migrate the schema
+	t.Log("[DEBUG] Starting schema migration...")
+	t.Log("[DEBUG] Models to migrate: User, UserProfile, Recipe, RecipeFavorite, DietaryPreference, Allergen")
+
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.UserProfile{},
@@ -81,12 +93,18 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 		&models.DietaryPreference{},
 		&models.Allergen{},
 	); err != nil {
+		t.Logf("[ERROR] Migration failed with error: %v", err)
+		t.Logf("[DEBUG] Database connection details - Host: %s, Port: %s, User: %s, DB: %s, SSL: %s",
+			cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBName, cfg.DBSSLMode)
 		t.Fatalf("failed to migrate test database: %v", err)
 	}
+	t.Log("[DEBUG] Schema migration completed successfully")
 
 	// Verify tables were created
+	t.Log("[DEBUG] Verifying table creation...")
 	var tables []string
 	if err := db.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&tables).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify tables: %v", err)
 		t.Fatalf("failed to verify tables: %v", err)
 	}
 
@@ -99,6 +117,9 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 		"allergens",
 	}
 
+	t.Logf("[DEBUG] Found tables: %v", tables)
+	t.Logf("[DEBUG] Expected tables: %v", expectedTables)
+
 	for _, expected := range expectedTables {
 		found := false
 		for _, table := range tables {
@@ -108,18 +129,22 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 			}
 		}
 		if !found {
+			t.Logf("[ERROR] Expected table %s was not found in database", expected)
 			t.Fatalf("expected table %s was not created", expected)
 		}
 	}
+	t.Log("[DEBUG] All expected tables verified successfully")
 
 	return testDB
 }
 
 // SetupTestDB creates a new test database using PostgreSQL testcontainer
 func SetupTestDB(t *testing.T) *TestDatabase {
+	t.Log("[DEBUG] Starting test database setup...")
 	ctx := context.Background()
 
 	// Set CI environment and required secrets
+	t.Log("[DEBUG] Setting up environment variables...")
 	os.Setenv("CI", "true")
 	os.Setenv("SERVER_PORT", "8080")
 	os.Setenv("SERVER_HOST", "localhost")
@@ -134,8 +159,10 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 	os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
 	os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
 	os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
+	t.Log("[DEBUG] Environment variables set successfully")
 
 	defer func() {
+		t.Log("[DEBUG] Cleaning up environment variables...")
 		os.Unsetenv("CI")
 		os.Unsetenv("SERVER_PORT")
 		os.Unsetenv("SERVER_HOST")
@@ -150,13 +177,17 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		os.Unsetenv("TEST_JWT_SECRET")
 		os.Unsetenv("TEST_REDIS_PASSWORD")
 		os.Unsetenv("TEST_REDIS_URL")
+		t.Log("[DEBUG] Environment variables cleaned up")
 	}()
 
 	// Load configuration
+	t.Log("[DEBUG] Loading configuration...")
 	cfg, err := config.LoadConfig()
 	if err != nil {
+		t.Logf("[ERROR] Failed to load configuration: %v", err)
 		t.Fatalf("failed to load configuration: %v", err)
 	}
+	t.Log("[DEBUG] Configuration loaded successfully")
 
 	// Debug logging
 	t.Logf("[DEBUG] DB_HOST: %s", cfg.DBHost)
@@ -171,21 +202,23 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 
 	// Check if we're in CI environment
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Log("[DEBUG] Running in CI environment")
 		// In CI, use the service container
 		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			cfg.DBHost,
 			cfg.DBPort,
 			cfg.DBUser,
-			os.Getenv("TEST_DB_PASSWORD"), // Use environment variable directly
+			os.Getenv("TEST_DB_PASSWORD"),
 			cfg.DBName,
 			cfg.DBSSLMode)
+		t.Log("[DEBUG] Database connection string created (password masked)")
 
 		// Connect to database with retry logic
 		maxRetries := 5
 		retryDelay := 2 * time.Second
 
 		for i := 0; i < maxRetries; i++ {
-			t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
+			t.Logf("[DEBUG] Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
 				cfg.DBHost,
 				cfg.DBPort,
 				cfg.DBUser,
@@ -196,19 +229,23 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 				Logger: logger.Default.LogMode(logger.Silent),
 			})
 			if err == nil {
+				t.Log("[DEBUG] Database connection successful")
 				break
 			}
 
-			t.Logf("Connection attempt %d failed: %v", i+1, err)
+			t.Logf("[ERROR] Connection attempt %d failed: %v", i+1, err)
 			if i < maxRetries-1 {
+				t.Logf("[DEBUG] Waiting %v before next attempt", retryDelay)
 				time.Sleep(retryDelay)
 				retryDelay *= 2 // Exponential backoff
 			}
 		}
 		if err != nil {
+			t.Logf("[ERROR] Failed to connect to database after %d attempts: %v", maxRetries, err)
 			t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
 		}
 	} else {
+		t.Log("[DEBUG] Running in local environment")
 		// In local environment, use testcontainers
 		container, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
@@ -303,7 +340,7 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		})
 	}
 
-	// Setup database schema and extensions
+	t.Log("[DEBUG] Setting up database...")
 	return setupDatabase(t, db, cfg)
 }
 
