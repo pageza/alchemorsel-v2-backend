@@ -13,6 +13,21 @@ jobs:
       contents: read
       packages: write
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,9 +49,6 @@ jobs:
         run: go test -v -cover ./...
         env:
           CI: "true"
-          # TestContainers config
-          TESTCONTAINERS_RYUK_DISABLED: "true"
-          TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED: "true"
           # Server config
           SERVER_HOST: localhost
           SERVER_PORT: 8080

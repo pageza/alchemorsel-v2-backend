@@ -87,100 +87,142 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
 	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
 
-	// Use testcontainers for both CI and local environments
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "pgvector/pgvector:pg16",
-			ExposedPorts: []string{"5432/tcp"},
-			Env: map[string]string{
-				"POSTGRES_USER":     cfg.DBUser,
-				"POSTGRES_PASSWORD": cfg.DBPassword,
-				"POSTGRES_DB":       cfg.DBName,
-			},
-			WaitingFor: wait.ForAll(
-				wait.ForListeningPort("5432/tcp"),
-				wait.ForLog("database system is ready to accept connections"),
-				wait.ForSQL("5432/tcp", "postgres", func(host string, port nat.Port) string {
-					return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-						cfg.DBUser,
-						cfg.DBPassword,
-						host,
-						port.Port(),
-						cfg.DBName,
-						cfg.DBSSLMode)
-				}).WithStartupTimeout(30*time.Second),
-				wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser, "-d", cfg.DBName}).
-					WithStartupTimeout(10*time.Second).
-					WithPollInterval(2*time.Second),
-			).WithStartupTimeout(60 * time.Second),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("failed to start container: %v", err)
-	}
-
-	// Get container host and port
-	host, err := container.Host(ctx)
-	if err != nil {
-		t.Fatalf("failed to get container host: %v", err)
-	}
-	mappedPort, err := container.MappedPort(ctx, "5432")
-	if err != nil {
-		t.Fatalf("failed to get container port: %v", err)
-	}
-
-	// Connect to database with retry logic
 	var db *gorm.DB
-	maxRetries := 5
-	retryDelay := 2 * time.Second
+	var container testcontainers.Container
 
-	for i := 0; i < maxRetries; i++ {
+	// Check if we're in CI environment
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		// In CI, use the service container
 		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			host,
-			mappedPort.Port(),
+			cfg.DBHost,
+			cfg.DBPort,
 			cfg.DBUser,
 			cfg.DBPassword,
 			cfg.DBName,
 			cfg.DBSSLMode)
 
-		// Log connection attempt (without sensitive data)
-		t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
-			host,
-			mappedPort.Port(),
-			cfg.DBUser,
-			i+1,
-			maxRetries)
+		// Connect to database with retry logic
+		maxRetries := 5
+		retryDelay := 2 * time.Second
 
-		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Silent),
+		for i := 0; i < maxRetries; i++ {
+			t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
+				cfg.DBHost,
+				cfg.DBPort,
+				cfg.DBUser,
+				i+1,
+				maxRetries)
+
+			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+				Logger: logger.Default.LogMode(logger.Silent),
+			})
+			if err == nil {
+				break
+			}
+
+			t.Logf("Connection attempt %d failed: %v", i+1, err)
+			if i < maxRetries-1 {
+				time.Sleep(retryDelay)
+				retryDelay *= 2 // Exponential backoff
+			}
+		}
+		if err != nil {
+			t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
+		}
+	} else {
+		// In local environment, use testcontainers
+		container, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Image:        "pgvector/pgvector:pg16",
+				ExposedPorts: []string{"5432/tcp"},
+				Env: map[string]string{
+					"POSTGRES_USER":     cfg.DBUser,
+					"POSTGRES_PASSWORD": cfg.DBPassword,
+					"POSTGRES_DB":       cfg.DBName,
+				},
+				WaitingFor: wait.ForAll(
+					wait.ForListeningPort("5432/tcp"),
+					wait.ForLog("database system is ready to accept connections"),
+					wait.ForSQL("5432/tcp", "postgres", func(host string, port nat.Port) string {
+						return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+							cfg.DBUser,
+							cfg.DBPassword,
+							host,
+							port.Port(),
+							cfg.DBName,
+							cfg.DBSSLMode)
+					}).WithStartupTimeout(30*time.Second),
+					wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser, "-d", cfg.DBName}).
+						WithStartupTimeout(10*time.Second).
+						WithPollInterval(2*time.Second),
+				).WithStartupTimeout(60 * time.Second),
+			},
+			Started: true,
 		})
-		if err == nil {
-			break
+		if err != nil {
+			t.Fatalf("failed to start container: %v", err)
 		}
 
-		t.Logf("Connection attempt %d failed: %v", i+1, err)
-		if i < maxRetries-1 {
-			time.Sleep(retryDelay)
-			retryDelay *= 2 // Exponential backoff
+		// Get container host and port
+		host, err := container.Host(ctx)
+		if err != nil {
+			t.Fatalf("failed to get container host: %v", err)
 		}
+		mappedPort, err := container.MappedPort(ctx, "5432")
+		if err != nil {
+			t.Fatalf("failed to get container port: %v", err)
+		}
+
+		// Connect to database with retry logic
+		maxRetries := 5
+		retryDelay := 2 * time.Second
+
+		for i := 0; i < maxRetries; i++ {
+			dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+				host,
+				mappedPort.Port(),
+				cfg.DBUser,
+				cfg.DBPassword,
+				cfg.DBName,
+				cfg.DBSSLMode)
+
+			t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
+				host,
+				mappedPort.Port(),
+				cfg.DBUser,
+				i+1,
+				maxRetries)
+
+			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+				Logger: logger.Default.LogMode(logger.Silent),
+			})
+			if err == nil {
+				break
+			}
+
+			t.Logf("Connection attempt %d failed: %v", i+1, err)
+			if i < maxRetries-1 {
+				time.Sleep(retryDelay)
+				retryDelay *= 2 // Exponential backoff
+			}
+		}
+		if err != nil {
+			t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
+		}
+
+		// Register cleanup for local environment
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			if err := container.Terminate(ctx); err != nil {
+				t.Errorf("failed to terminate container: %v", err)
+			}
+
+			// Wait for container to be fully terminated
+			<-ctx.Done()
+		})
 	}
-	if err != nil {
-		t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
-	}
-
-	// Register cleanup
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := container.Terminate(ctx); err != nil {
-			t.Errorf("failed to terminate container: %v", err)
-		}
-
-		// Wait for container to be fully terminated
-		<-ctx.Done()
-	})
 
 	// Create the test database instance
 	testDB := &TestDatabase{
