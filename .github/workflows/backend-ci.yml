@@ -79,7 +79,6 @@ jobs:
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
-          cd backend
           go test -v -race ./internal/testhelpers/... -run "TestDatabaseConnection|TestMainRouter|TestEnvLoading"
           if [ $? -ne 0 ]; then
             echo "Critical tests failed"
@@ -90,7 +89,6 @@ jobs:
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
-          cd backend
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           if (( $(echo "$COVERAGE < 85" | bc -l) )); then
@@ -105,8 +103,8 @@ jobs:
         with:
           name: test-artifacts
           path: |
-            backend/coverage.out
-            backend/test-artifacts/
+            coverage.out
+            test-artifacts/
 
       - name: Clear caches
         if: always()
