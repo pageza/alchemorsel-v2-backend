@@ -37,39 +37,58 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.22.1'
+          cache: true
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          go mod download
+          go install github.com/cosmtrek/air@latest
 
-      - name: Print environment for debugging
-        run: env | sort
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
+              echo "PostgreSQL is ready!"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... attempt $i"
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          exit 1
 
       - name: Run tests
-        run: go test -v -cover ./...
         env:
-          CI: "true"
-          # Server config
-          SERVER_HOST: localhost
+          CI: true
           SERVER_PORT: 8080
-          # Database config
+          SERVER_HOST: localhost
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: testuser
-          TEST_DB_PASSWORD: testpass
+          DB_PASSWORD: testpass
           DB_NAME: testdb
           DB_SSL_MODE: disable
-          # Redis config
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          TEST_REDIS_PASSWORD: test-redis-pass
-          REDIS_URL: redis://:test-redis-pass@localhost:6379/0
-          # Auth config
+          TEST_DB_PASSWORD: testpass
           TEST_JWT_SECRET: test-jwt-secret
-          # LLM config
-          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
-        # Add timeout and ensure proper cleanup
-        timeout-minutes: 10
+          TEST_REDIS_PASSWORD: test-redis-pass
+          TEST_REDIS_URL: redis://localhost:6379
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          cd backend
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out
+
+      - name: Clear caches
+        if: always()
+        run: |
+          go clean -cache -modcache -i -r
+          docker system prune -f
+
+      - name: Print environment for debugging
+        run: env | sort
 
       - name: Clear golangci-lint cache
         run: |

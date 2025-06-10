@@ -36,6 +36,85 @@ func (db *TestDatabase) DB() *gorm.DB {
 	return db.db
 }
 
+// setupDatabase handles database initialization and migration
+func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase {
+	// Create test database instance
+	testDB := &TestDatabase{
+		db:          db,
+		config:      cfg,
+		authService: service.NewAuthService(db, cfg.JWTSecret),
+	}
+
+	// Install pgvector extension
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		t.Fatalf("failed to install pgvector extension: %v", err)
+	}
+
+	// Create dietary preference type enum
+	if err := db.Exec(`
+		DO $$ BEGIN
+			CREATE TYPE dietary_preference_type AS ENUM (
+				'vegetarian',
+				'vegan',
+				'pescatarian',
+				'gluten-free',
+				'dairy-free',
+				'nut-free',
+				'soy-free',
+				'egg-free',
+				'shellfish-free',
+				'custom'
+			);
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
+	`).Error; err != nil {
+		t.Fatalf("failed to create dietary preference type: %v", err)
+	}
+
+	// Auto-migrate the schema
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.UserProfile{},
+		&models.Recipe{},
+		&models.RecipeFavorite{},
+		&models.DietaryPreference{},
+		&models.Allergen{},
+	); err != nil {
+		t.Fatalf("failed to migrate test database: %v", err)
+	}
+
+	// Verify tables were created
+	var tables []string
+	if err := db.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&tables).Error; err != nil {
+		t.Fatalf("failed to verify tables: %v", err)
+	}
+
+	expectedTables := []string{
+		"users",
+		"user_profiles",
+		"recipes",
+		"recipe_favorites",
+		"dietary_preferences",
+		"allergens",
+	}
+
+	for _, expected := range expectedTables {
+		found := false
+		for _, table := range tables {
+			if table == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected table %s was not created", expected)
+		}
+	}
+
+	return testDB
+}
+
 // SetupTestDB creates a new test database using PostgreSQL testcontainer
 func SetupTestDB(t *testing.T) *TestDatabase {
 	ctx := context.Background()
@@ -224,66 +303,8 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		})
 	}
 
-	// Create the test database instance
-	testDB := &TestDatabase{
-		db:          db,
-		config:      cfg,
-		authService: service.NewAuthService(db, cfg.JWTSecret),
-	}
-
 	// Setup database schema and extensions
-	testDB = setupDatabase(t, db, cfg)
-
-	return testDB
-}
-
-// setupDatabase performs common database setup tasks
-func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase {
-	// Install pgvector extension
-	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
-		t.Fatalf("failed to install pgvector extension: %v", err)
-	}
-
-	// Create dietary preference type enum
-	if err := db.Exec(`
-		DO $$ BEGIN
-			CREATE TYPE dietary_preference_type AS ENUM (
-				'vegetarian',
-				'vegan',
-				'pescatarian',
-				'gluten-free',
-				'dairy-free',
-				'nut-free',
-				'soy-free',
-				'egg-free',
-				'shellfish-free',
-				'custom'
-			);
-		EXCEPTION
-			WHEN duplicate_object THEN null;
-		END $$;
-	`).Error; err != nil {
-		t.Fatalf("failed to create dietary preference type: %v", err)
-	}
-
-	// Auto-migrate the schema
-	err := db.AutoMigrate(
-		&models.User{},
-		&models.UserProfile{},
-		&models.Recipe{},
-		&models.RecipeFavorite{},
-		&models.DietaryPreference{},
-		&models.Allergen{},
-	)
-	if err != nil {
-		t.Fatalf("failed to migrate test database: %v", err)
-	}
-
-	return &TestDatabase{
-		db:          db,
-		config:      cfg,
-		authService: service.NewAuthService(db, cfg.JWTSecret),
-	}
+	return setupDatabase(t, db, cfg)
 }
 
 // CreateTestUserAndToken creates a test user and returns their ID and a valid JWT token
