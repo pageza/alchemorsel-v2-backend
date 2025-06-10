@@ -40,3 +40,4 @@ dist/
 # Debug files
 debug
 debug.test 
+.github/workflows/ci-output.txt

@@ -169,6 +169,9 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		authService: service.NewAuthService(db, cfg.JWTSecret),
 	}
 
+	// Setup database schema and extensions
+	testDB = setupDatabase(t, db, cfg)
+
 	return testDB
 }
 
