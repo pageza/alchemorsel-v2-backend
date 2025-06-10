@@ -176,7 +176,7 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 			cfg.DBHost,
 			cfg.DBPort,
 			cfg.DBUser,
-			cfg.DBPassword,
+			os.Getenv("TEST_DB_PASSWORD"), // Use environment variable directly
 			cfg.DBName,
 			cfg.DBSSLMode)
 
