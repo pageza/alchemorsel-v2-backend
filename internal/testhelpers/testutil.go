@@ -112,20 +112,29 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 	t.Log("[DEBUG] Starting schema migration...")
 	t.Log("[DEBUG] Models to migrate: User, UserProfile, Recipe, RecipeFavorite, DietaryPreference, Allergen")
 
+	// First, create tables without the vector column
+	t.Log("[DEBUG] Creating initial tables without vector column...")
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.UserProfile{},
-		&models.Recipe{},
 		&models.RecipeFavorite{},
 		&models.DietaryPreference{},
 		&models.Allergen{},
 	); err != nil {
-		t.Logf("[ERROR] Migration failed with error: %v", err)
+		t.Logf("[ERROR] Initial migration failed: %v", err)
+		t.Fatalf("failed to migrate initial tables: %v", err)
+	}
+	t.Log("[DEBUG] Initial tables created successfully")
+
+	// Then, create the recipes table with vector column
+	t.Log("[DEBUG] Creating recipes table with vector column...")
+	if err := db.AutoMigrate(&models.Recipe{}); err != nil {
+		t.Logf("[ERROR] Recipe table migration failed: %v", err)
 		t.Logf("[DEBUG] Database connection details - Host: %s, Port: %s, User: %s, DB: %s, SSL: %s",
 			cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBName, cfg.DBSSLMode)
-		t.Fatalf("failed to migrate test database: %v", err)
+		t.Fatalf("failed to migrate recipes table: %v", err)
 	}
-	t.Log("[DEBUG] Schema migration completed successfully")
+	t.Log("[DEBUG] Recipes table created successfully")
 
 	// Verify tables were created
 	t.Log("[DEBUG] Verifying table creation...")

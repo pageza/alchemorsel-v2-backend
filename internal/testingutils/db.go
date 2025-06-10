@@ -63,7 +63,7 @@ type TestRecipe struct {
 	CookTime     int                 `json:"cook_time"`
 	Servings     int                 `json:"servings"`
 	Difficulty   string              `json:"difficulty"`
-	Embedding    []float32           `gorm:"type:text" json:"embedding"`
+	Embedding    pgvector.Vector     `gorm:"type:vector(1536)" json:"embedding"`
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt      `gorm:"index" json:"-"`
@@ -254,4 +254,18 @@ func CreateTestUserAndToken(t *testing.T, db *TestDB) (uuid.UUID, string) {
 	}
 
 	return userID, token
+}
+
+// Value implements the driver.Valuer interface for TestRecipe.Embedding
+func (r TestRecipe) Value() (driver.Value, error) {
+	return r.Embedding.Value()
+}
+
+// Scan implements the sql.Scanner interface for TestRecipe.Embedding
+func (r *TestRecipe) Scan(value interface{}) error {
+	if value == nil {
+		r.Embedding = pgvector.Vector{}
+		return nil
+	}
+	return r.Embedding.Scan(value)
 }

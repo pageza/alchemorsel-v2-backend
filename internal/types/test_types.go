@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 )
 
 // TestUser represents a test user
@@ -25,17 +26,18 @@ type TestUserPreference struct {
 
 // TestRecipe represents a test recipe
 type TestRecipe struct {
-	ID           uuid.UUID `json:"id"`
-	UserID       uuid.UUID `json:"user_id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description"`
-	Ingredients  []string  `json:"ingredients"`
-	Instructions []string  `json:"instructions"`
-	ImageURL     string    `json:"image_url"`
-	PrepTime     int       `json:"prep_time"`
-	CookTime     int       `json:"cook_time"`
-	Servings     int       `json:"servings"`
-	Difficulty   string    `json:"difficulty"`
+	ID           uuid.UUID       `json:"id"`
+	UserID       uuid.UUID       `json:"user_id"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Ingredients  []string        `json:"ingredients"`
+	Instructions []string        `json:"instructions"`
+	ImageURL     string          `json:"image_url"`
+	PrepTime     int             `json:"prep_time"`
+	CookTime     int             `json:"cook_time"`
+	Servings     int             `json:"servings"`
+	Difficulty   string          `json:"difficulty"`
+	Embedding    pgvector.Vector `json:"embedding"`
 }
 
 // TestRecipeFavorite represents a test recipe favorite

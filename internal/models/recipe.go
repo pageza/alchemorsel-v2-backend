@@ -58,7 +58,7 @@ type Recipe struct {
 	Protein            float64          `gorm:"type:float" json:"protein"`
 	Carbs              float64          `gorm:"type:float" json:"carbs"`
 	Fat                float64          `gorm:"type:float" json:"fat"`
-	Embedding          pgvector.Vector  `gorm:"type:vector(1536);not null" json:"-"`
+	Embedding          pgvector.Vector  `gorm:"type:vector(1536)" json:"-"`
 	UserID             uuid.UUID        `gorm:"type:uuid;not null" json:"user_id"`
 	DietaryPreferences JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"dietary_preferences"`
 	Tags               JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"tags"`

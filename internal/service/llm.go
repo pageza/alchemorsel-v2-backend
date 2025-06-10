@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -148,24 +149,24 @@ func (s *ServingsType) UnmarshalJSON(data []byte) error {
 
 // RecipeDraft represents a recipe in draft state
 type RecipeDraft struct {
-	ID           string       `json:"id"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	Name         string       `json:"name"`
-	Description  string       `json:"description"`
-	Category     string       `json:"category"`
-	Ingredients  []string     `json:"ingredients"`
-	Instructions []string     `json:"instructions"`
-	PrepTime     string       `json:"prep_time"`
-	CookTime     string       `json:"cook_time"`
-	Servings     ServingsType `json:"servings"`
-	Difficulty   string       `json:"difficulty"`
-	Calories     float64      `json:"calories"`
-	Protein      float64      `json:"protein"`
-	Carbs        float64      `json:"carbs"`
-	Fat          float64      `json:"fat"`
-	UserID       string       `json:"user_id"`
-	Embedding    []float32    `json:"embedding"`
+	ID           string          `json:"id"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Category     string          `json:"category"`
+	Ingredients  []string        `json:"ingredients"`
+	Instructions []string        `json:"instructions"`
+	PrepTime     string          `json:"prep_time"`
+	CookTime     string          `json:"cook_time"`
+	Servings     ServingsType    `json:"servings"`
+	Difficulty   string          `json:"difficulty"`
+	Calories     float64         `json:"calories"`
+	Protein      float64         `json:"protein"`
+	Carbs        float64         `json:"carbs"`
+	Fat          float64         `json:"fat"`
+	UserID       string          `json:"user_id"`
+	Embedding    pgvector.Vector `json:"embedding"`
 }
 
 // SaveDraft saves a recipe draft to Redis
