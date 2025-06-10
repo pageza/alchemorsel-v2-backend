@@ -27,16 +27,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     env:
       CI: true
@@ -48,12 +38,8 @@ jobs:
       DB_PASSWORD: testpass
       DB_NAME: testdb
       DB_SSL_MODE: disable
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
       TEST_DB_PASSWORD: testpass
       TEST_JWT_SECRET: test-jwt-secret
-      TEST_REDIS_PASSWORD: test-redis-pass
-      TEST_REDIS_URL: redis://localhost:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -100,19 +86,6 @@ jobs:
             sleep 2
           done
           echo "PostgreSQL failed to start"
-          exit 1
-
-      - name: Verify Redis connection
-        run: |
-          for i in {1..30}; do
-            if redis-cli -h localhost ping; then
-              echo "Redis is ready!"
-              exit 0
-            fi
-            echo "Waiting for Redis... attempt $i"
-            sleep 2
-          done
-          echo "Redis failed to start"
           exit 1
 
       - name: Run critical tests first
@@ -165,8 +138,6 @@ jobs:
           docker info
           echo "=== PostgreSQL Status ==="
           pg_isready -h localhost -p 5432
-          echo "=== Redis Status ==="
-          redis-cli -h localhost ping
 
       - name: Clear golangci-lint cache
         run: |
