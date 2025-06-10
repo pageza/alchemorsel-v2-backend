@@ -67,6 +67,10 @@ jobs:
               echo "PostgreSQL is ready!"
               # Verify database credentials
               PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "SELECT 1" || exit 1
+              # Verify pgvector extension
+              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;" || exit 1
+              # Verify vector type
+              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = 'vector');" | grep -q t || exit 1
               exit 0
             fi
             echo "Waiting for PostgreSQL... attempt $i"

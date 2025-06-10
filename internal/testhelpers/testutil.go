@@ -15,6 +15,7 @@ import (
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
+	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -56,6 +57,19 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 	}
 	t.Log("[DEBUG] pgvector extension installed successfully")
 
+	// Verify pgvector installation
+	t.Log("[DEBUG] Verifying pgvector installation...")
+	var extensionExists bool
+	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')").Scan(&extensionExists).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify pgvector extension: %v", err)
+		t.Fatalf("failed to verify pgvector extension: %v", err)
+	}
+	if !extensionExists {
+		t.Log("[ERROR] pgvector extension not found after installation")
+		t.Fatal("pgvector extension not found after installation")
+	}
+	t.Log("[DEBUG] pgvector extension verified successfully")
+
 	// Create dietary preference type enum
 	t.Log("[DEBUG] Creating dietary preference type enum...")
 	if err := db.Exec(`
@@ -80,6 +94,19 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 		t.Fatalf("failed to create dietary preference type: %v", err)
 	}
 	t.Log("[DEBUG] Dietary preference type enum created successfully")
+
+	// Verify dietary preference type
+	t.Log("[DEBUG] Verifying dietary preference type...")
+	var typeExists bool
+	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = 'dietary_preference_type')").Scan(&typeExists).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify dietary preference type: %v", err)
+		t.Fatalf("failed to verify dietary preference type: %v", err)
+	}
+	if !typeExists {
+		t.Log("[ERROR] dietary_preference_type not found after creation")
+		t.Fatal("dietary_preference_type not found after creation")
+	}
+	t.Log("[DEBUG] Dietary preference type verified successfully")
 
 	// Auto-migrate the schema
 	t.Log("[DEBUG] Starting schema migration...")
@@ -134,6 +161,32 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 		}
 	}
 	t.Log("[DEBUG] All expected tables verified successfully")
+
+	// Verify vector column in recipes table
+	t.Log("[DEBUG] Verifying vector column in recipes table...")
+	var columnExists bool
+	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'embedding' AND data_type = 'USER-DEFINED')").Scan(&columnExists).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify vector column: %v", err)
+		t.Fatalf("failed to verify vector column: %v", err)
+	}
+	if !columnExists {
+		t.Log("[ERROR] vector column not found in recipes table")
+		t.Fatal("vector column not found in recipes table")
+	}
+	t.Log("[DEBUG] Vector column verified successfully")
+
+	// Verify vector column type
+	t.Log("[DEBUG] Verifying vector column type...")
+	var columnType string
+	if err := db.Raw("SELECT udt_name FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'embedding'").Scan(&columnType).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify vector column type: %v", err)
+		t.Fatalf("failed to verify vector column type: %v", err)
+	}
+	if columnType != "vector" {
+		t.Logf("[ERROR] Expected vector column type 'vector', got '%s'", columnType)
+		t.Fatalf("expected vector column type 'vector', got '%s'", columnType)
+	}
+	t.Log("[DEBUG] Vector column type verified successfully")
 
 	return testDB
 }
@@ -409,17 +462,64 @@ func CreateTestProfile(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.User
 	return profile
 }
 
-// CreateTestRecipe creates a test recipe in the database
+// CreateTestRecipe creates a test recipe with the given user ID
 func CreateTestRecipe(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.Recipe {
+	t.Log("[DEBUG] Creating test recipe...")
 	recipe := &models.Recipe{
-		UserID:       userID,
-		Name:         "Test Recipe",
-		Description:  "A test recipe",
-		Ingredients:  models.JSONBStringArray{"ingredient1", "ingredient2"},
-		Instructions: models.JSONBStringArray{"step1", "step2"},
+		Name:               "Test Recipe",
+		Description:        "Test Description",
+		UserID:             userID,
+		Category:           "Main Course",
+		Cuisine:            "Italian",
+		Ingredients:        []string{"ingredient1", "ingredient2"},
+		Instructions:       []string{"step1", "step2"},
+		Calories:           100,
+		Protein:            10,
+		Carbs:              20,
+		Fat:                5,
+		Embedding:          pgvector.NewVector([]float32{1.0, 2.0, 3.0}), // Example embedding
+		DietaryPreferences: []string{"vegetarian"},
+		Tags:               []string{"healthy", "quick"},
 	}
-	err := db.Create(recipe).Error
-	assert.NoError(t, err)
+
+	t.Log("[DEBUG] Saving test recipe to database...")
+	if err := db.Create(recipe).Error; err != nil {
+		t.Logf("[ERROR] Failed to create test recipe: %v", err)
+		t.Fatalf("failed to create test recipe: %v", err)
+	}
+	t.Log("[DEBUG] Test recipe created successfully")
+
+	// Verify recipe was created with vector
+	t.Log("[DEBUG] Verifying test recipe creation...")
+	var savedRecipe models.Recipe
+	if err := db.First(&savedRecipe, recipe.ID).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify test recipe: %v", err)
+		t.Fatalf("failed to verify test recipe: %v", err)
+	}
+
+	// Verify vector embedding
+	t.Log("[DEBUG] Verifying vector embedding...")
+	// The vector should be initialized with zeros by the BeforeCreate hook
+	zeroVector := make([]float32, 1536)
+	expectedVector := pgvector.NewVector(zeroVector)
+
+	// Compare vectors by converting to slices
+	savedVec := savedRecipe.Embedding.Slice()
+	expectedVec := expectedVector.Slice()
+
+	if len(savedVec) != len(expectedVec) {
+		t.Logf("[ERROR] Vector length mismatch: got %d, want %d", len(savedVec), len(expectedVec))
+		t.Fatal("vector length mismatch")
+	}
+
+	for i := range savedVec {
+		if savedVec[i] != expectedVec[i] {
+			t.Logf("[ERROR] Vector mismatch at index %d: got %f, want %f", i, savedVec[i], expectedVec[i])
+			t.Fatal("vector mismatch")
+		}
+	}
+	t.Log("[DEBUG] Vector embedding verified successfully")
+
 	return recipe
 }
 
