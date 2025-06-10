@@ -28,6 +28,23 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    env:
+      CI: true
+      SERVER_PORT: 8080
+      SERVER_HOST: localhost
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+      DB_NAME: testdb
+      DB_SSL_MODE: disable
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      TEST_DB_PASSWORD: testpass
+      TEST_JWT_SECRET: test-jwt-secret
+      TEST_REDIS_PASSWORD: test-redis-pass
+      TEST_REDIS_URL: redis://localhost:6379
+
     steps:
       - uses: actions/checkout@v4
 
@@ -37,17 +54,19 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.3'
+          go-version: '1.23.0'
           cache: true
 
       - name: Install dependencies
         run: go mod download
 
-      - name: Wait for PostgreSQL
+      - name: Verify database connection
         run: |
           for i in {1..30}; do
             if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
               echo "PostgreSQL is ready!"
+              # Verify database credentials
+              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "SELECT 1" || exit 1
               exit 0
             fi
             echo "Waiting for PostgreSQL... attempt $i"
@@ -56,28 +75,38 @@ jobs:
           echo "PostgreSQL failed to start"
           exit 1
 
-      - name: Run tests
+      - name: Run critical tests first
         env:
-          CI: true
-          SERVER_PORT: 8080
-          SERVER_HOST: localhost
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: testuser
-          DB_PASSWORD: testpass
-          DB_NAME: testdb
-          DB_SSL_MODE: disable
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          TEST_DB_PASSWORD: testpass
-          TEST_JWT_SECRET: test-jwt-secret
-          TEST_REDIS_PASSWORD: test-redis-pass
-          TEST_REDIS_URL: redis://localhost:6379
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          cd backend
+          go test -v -race ./internal/testhelpers/... -run "TestDatabaseConnection|TestMainRouter|TestEnvLoading"
+          if [ $? -ne 0 ]; then
+            echo "Critical tests failed"
+            exit 1
+          fi
+
+      - name: Run all tests with coverage
+        env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           cd backend
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          if (( $(echo "$COVERAGE < 85" | bc -l) )); then
+            echo "Test coverage ($COVERAGE%) is below required threshold (85%)"
+            exit 1
+          fi
           go tool cover -func=coverage.out
+
+      - name: Store test artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-artifacts
+          path: |
+            backend/coverage.out
+            backend/test-artifacts/
 
       - name: Clear caches
         if: always()
