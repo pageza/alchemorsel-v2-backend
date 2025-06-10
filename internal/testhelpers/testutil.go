@@ -46,12 +46,12 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 	os.Setenv("SERVER_HOST", "localhost")
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_PORT", "5432")
-	os.Setenv("DB_USER", "postgres")
-	os.Setenv("DB_NAME", "alchemorsel")
+	os.Setenv("DB_USER", "testuser")
+	os.Setenv("DB_NAME", "testdb")
 	os.Setenv("DB_SSL_MODE", "disable")
 	os.Setenv("REDIS_HOST", "localhost")
 	os.Setenv("REDIS_PORT", "6379")
-	os.Setenv("TEST_DB_PASSWORD", "postpass")
+	os.Setenv("TEST_DB_PASSWORD", "testpass")
 	os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
 	os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
 	os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
@@ -80,12 +80,12 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 	}
 
 	// Debug logging
-	t.Logf("[DEBUG] cfg.DBHost: %s", cfg.DBHost)
-	t.Logf("[DEBUG] cfg.DBPort: %s", cfg.DBPort)
-	t.Logf("[DEBUG] cfg.DBUser: %s", cfg.DBUser)
-	t.Logf("[DEBUG] cfg.DBPassword: %s", cfg.DBPassword)
-	t.Logf("[DEBUG] cfg.DBName: %s", cfg.DBName)
-	t.Logf("[DEBUG] cfg.DBSSLMode: %s", cfg.DBSSLMode)
+	t.Logf("[DEBUG] DB_HOST: %s", cfg.DBHost)
+	t.Logf("[DEBUG] DB_PORT: %s", cfg.DBPort)
+	t.Logf("[DEBUG] DB_USER: %s", cfg.DBUser)
+	t.Logf("[DEBUG] DB_PASSWORD: %s", cfg.DBPassword)
+	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
+	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
 
 	// Use testcontainers for both CI and local environments
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -108,7 +108,10 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 						port.Port(),
 						cfg.DBName,
 						cfg.DBSSLMode)
-				}),
+				}).WithStartupTimeout(30*time.Second),
+				wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser, "-d", cfg.DBName}).
+					WithStartupTimeout(10*time.Second).
+					WithPollInterval(2*time.Second),
 			).WithStartupTimeout(60 * time.Second),
 		},
 		Started: true,
@@ -127,26 +130,43 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host,
-		mappedPort.Port(),
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBName,
-		cfg.DBSSLMode)
+	// Connect to database with retry logic
+	var db *gorm.DB
+	maxRetries := 5
+	retryDelay := 2 * time.Second
 
-	// Log connection attempt (without sensitive data)
-	t.Logf("Attempting to connect to database at %s:%s as user %s",
-		host,
-		mappedPort.Port(),
-		cfg.DBUser)
+	for i := 0; i < maxRetries; i++ {
+		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			host,
+			mappedPort.Port(),
+			cfg.DBUser,
+			cfg.DBPassword,
+			cfg.DBName,
+			cfg.DBSSLMode)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+		// Log connection attempt (without sensitive data)
+		t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
+			host,
+			mappedPort.Port(),
+			cfg.DBUser,
+			i+1,
+			maxRetries)
+
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err == nil {
+			break
+		}
+
+		t.Logf("Connection attempt %d failed: %v", i+1, err)
+		if i < maxRetries-1 {
+			time.Sleep(retryDelay)
+			retryDelay *= 2 // Exponential backoff
+		}
+	}
 	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
+		t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
 	}
 
 	// Register cleanup

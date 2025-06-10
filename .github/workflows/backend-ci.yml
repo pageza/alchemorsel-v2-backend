@@ -43,19 +43,21 @@ jobs:
           # Database config
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_USER: ${{ vars.TEST_DB_USER }}
-          TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          DB_NAME: ${{ vars.TEST_DB_NAME }}
+          DB_USER: testuser
+          TEST_DB_PASSWORD: testpass
+          DB_NAME: testdb
           DB_SSL_MODE: disable
           # Redis config
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          TEST_REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
-          REDIS_URL: redis://:${{ secrets.TEST_REDIS_PASSWORD }}@localhost:6379/0
+          TEST_REDIS_PASSWORD: test-redis-pass
+          REDIS_URL: redis://:test-redis-pass@localhost:6379/0
           # Auth config
-          TEST_JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          TEST_JWT_SECRET: test-jwt-secret
           # LLM config
           LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
+        # Add timeout and ensure proper cleanup
+        timeout-minutes: 10
 
       - name: Clear golangci-lint cache
         run: |
