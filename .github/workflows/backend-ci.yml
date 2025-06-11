@@ -78,7 +78,7 @@ jobs:
               # Create extensions and verify setup
               PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
               PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN RAISE EXCEPTION 'pgvector extension not properly installed'; END IF; END \$\$;"
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "CREATE TYPE IF NOT EXISTS dietary_preference AS ENUM ('vegetarian', 'vegan', 'pescatarian', 'omnivore', 'keto', 'paleo');"
+              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'dietary_preference') THEN CREATE TYPE dietary_preference AS ENUM ('vegetarian', 'vegan', 'pescatarian', 'omnivore', 'keto', 'paleo'); END IF; END \$\$;"
               exit 0
             fi
             echo "Waiting for PostgreSQL... attempt $i"
