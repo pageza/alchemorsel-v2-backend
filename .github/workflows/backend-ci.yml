@@ -14,26 +14,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 10s
-          --health-retries 10
-
     env:
       CI: true
       SERVER_PORT: 8080
       SERVER_HOST: localhost
-      DB_HOST: postgres
+      DB_HOST: localhost
       DB_PORT: 5432
       DB_USER: testuser
       DB_PASSWORD: testpass
@@ -71,21 +56,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Initialize database
-        run: |
-          until pg_isready -h postgres -p 5432 -U testuser; do
-            echo "Waiting for postgres..."
-            sleep 2
-          done
-          
-          PGPASSWORD=testpass psql -h postgres -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
-          PGPASSWORD=testpass psql -h postgres -U testuser -d testdb -c "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'dietary_preference') THEN CREATE TYPE dietary_preference AS ENUM ('vegetarian', 'vegan', 'pescatarian', 'omnivore'); END IF; END $$;"
-
       - name: Build
         run: go build -v ./...
 
@@ -121,8 +91,6 @@ jobs:
           go list -m all
           echo "=== Docker Info ==="
           docker info
-          echo "=== PostgreSQL Status ==="
-          pg_isready -h postgres -p 5432
 
       - name: Clear golangci-lint cache
         run: |
