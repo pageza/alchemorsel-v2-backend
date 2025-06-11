@@ -45,11 +45,9 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Build
-        working-directory: backend
         run: go build -v ./...
 
       - name: Run tests
-        working-directory: backend
         run: |
           go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
           go tool cover -func=coverage.txt
@@ -60,8 +58,8 @@ jobs:
         with:
           name: test-artifacts
           path: |
-            backend/coverage.txt
-            backend/test-artifacts/
+            coverage.txt
+            test-artifacts/
 
       - name: Clear caches
         if: always()
@@ -97,6 +95,6 @@ jobs:
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
-          file: ./backend/coverage.txt
+          file: ./coverage.txt
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
