@@ -18,19 +18,7 @@ jobs:
       CI: true
       SERVER_PORT: 8080
       SERVER_HOST: localhost
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_USER: testuser
-      DB_PASSWORD: testpass
-      DB_NAME: testdb
-      DB_SSL_MODE: disable
-      TEST_DB_PASSWORD: testpass
       TEST_JWT_SECRET: test-jwt-secret
-      # Add Redis environment variables to satisfy code requirements
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: testpass
-      TEST_REDIS_PASSWORD: testpass
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
     steps:
@@ -57,11 +45,12 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Build
+        working-directory: backend
         run: go build -v ./...
 
       - name: Run tests
+        working-directory: backend
         run: |
-          cd backend
           go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
           go tool cover -func=coverage.txt
 
@@ -71,8 +60,8 @@ jobs:
         with:
           name: test-artifacts
           path: |
-            coverage.txt
-            test-artifacts/
+            backend/coverage.txt
+            backend/test-artifacts/
 
       - name: Clear caches
         if: always()
