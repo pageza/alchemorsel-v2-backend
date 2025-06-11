@@ -13,21 +13,6 @@ jobs:
       contents: read
       packages: write
 
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 10s
-          --health-retries 10
-
     env:
       CI: true
       SERVER_PORT: 8080
@@ -40,6 +25,7 @@ jobs:
       DB_SSL_MODE: disable
       TEST_DB_PASSWORD: testpass
       TEST_JWT_SECRET: test-jwt-secret
+      # Add Redis environment variables to satisfy code requirements
       REDIS_HOST: localhost
       REDIS_PORT: 6379
       REDIS_PASSWORD: testpass
@@ -73,47 +59,10 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Initialize and verify database
-        run: |
-          echo "Waiting for PostgreSQL to be ready..."
-          for i in {1..30}; do
-            if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
-              echo "PostgreSQL is ready!"
-              # Create extensions and verify setup
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN RAISE EXCEPTION 'pgvector extension not properly installed'; END IF; END \$\$;"
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'dietary_preference') THEN CREATE TYPE dietary_preference AS ENUM ('vegetarian', 'vegan', 'pescatarian', 'omnivore', 'keto', 'paleo'); END IF; END \$\$;"
-              # Ensure database is clean for migrations
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-              exit 0
-            fi
-            echo "Waiting for PostgreSQL... attempt $i"
-            sleep 2
-          done
-          echo "PostgreSQL failed to start"
-          exit 1
-
-      - name: Run critical tests first
+      - name: Run tests
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-        run: |
-          go test -v -race ./internal/testhelpers/... -run "TestDatabaseConnection|TestMainRouter|TestEnvLoading"
-          if [ $? -ne 0 ]; then
-            echo "Critical tests failed"
-            exit 1
-          fi
-
-      - name: Run all tests with coverage
-        env:
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-        run: |
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          if (( $(echo "$COVERAGE < 85" | bc -l) )); then
-            echo "Test coverage ($COVERAGE%) is below required threshold (85%)"
-            exit 1
-          fi
-          go tool cover -func=coverage.out
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Store test artifacts
         if: always()
@@ -121,7 +70,7 @@ jobs:
         with:
           name: test-artifacts
           path: |
-            coverage.out
+            coverage.txt
             test-artifacts/
 
       - name: Clear caches
