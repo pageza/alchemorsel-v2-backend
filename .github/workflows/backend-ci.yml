@@ -20,6 +20,12 @@ jobs:
       SERVER_HOST: localhost
       TEST_JWT_SECRET: test-jwt-secret
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: testuser
+      DB_NAME: testdb
+      DB_SSL_MODE: disable
+      TEST_DB_PASSWORD: testpass
 
     steps:
       - name: Checkout code
@@ -43,6 +49,26 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+
+      - name: Start test database
+        run: |
+          docker run -d \
+            --name test-db \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpass \
+            -e POSTGRES_DB=testdb \
+            -p 5432:5432 \
+            pgvector/pgvector:pg16
+          
+          # Wait for database to be ready
+          for i in {1..30}; do
+            if docker exec test-db pg_isready -U testuser -d testdb; then
+              echo "Database is ready"
+              break
+            fi
+            echo "Waiting for database to be ready... (attempt $i/30)"
+            sleep 2
+          done
 
       - name: Build
         run: go build -v ./...
