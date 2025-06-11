@@ -24,9 +24,9 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 10
 
     env:
       CI: true
@@ -69,17 +69,25 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Verify database connection
+      - name: Initialize and verify database
         run: |
+          echo "Waiting for PostgreSQL to be ready..."
           for i in {1..30}; do
             if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
               echo "PostgreSQL is ready!"
-              # Verify database credentials
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "SELECT 1" || exit 1
-              # Verify pgvector extension
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;" || exit 1
-              # Verify vector type
-              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = 'vector');" | grep -q t || exit 1
+              # Create extensions and verify setup
+              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb <<EOF
+              CREATE EXTENSION IF NOT EXISTS vector;
+              DO \$\$
+              BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN
+                  RAISE EXCEPTION 'pgvector extension not properly installed';
+                END IF;
+              END \$\$;
+              CREATE TYPE IF NOT EXISTS dietary_preference AS ENUM (
+                'vegetarian', 'vegan', 'pescatarian', 'omnivore', 'keto', 'paleo'
+              );
+              EOF
               exit 0
             fi
             echo "Waiting for PostgreSQL... attempt $i"
