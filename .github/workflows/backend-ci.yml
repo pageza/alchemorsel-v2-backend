@@ -6,18 +6,34 @@ on:
   pull_request:
     branches: [ pristine-working-point ]
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 10
 
     env:
       CI: true
       SERVER_PORT: 8080
       SERVER_HOST: localhost
-      DB_HOST: localhost
+      DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: testuser
       DB_PASSWORD: testpass
@@ -30,9 +46,11 @@ jobs:
       REDIS_PORT: 6379
       REDIS_PASSWORD: testpass
       TEST_REDIS_PASSWORD: testpass
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -54,15 +72,28 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Initialize database
+        run: |
+          until pg_isready -h postgres -p 5432 -U testuser; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+          
+          PGPASSWORD=testpass psql -h postgres -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          PGPASSWORD=testpass psql -h postgres -U testuser -d testdb -c "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'dietary_preference') THEN CREATE TYPE dietary_preference AS ENUM ('vegetarian', 'vegan', 'pescatarian', 'omnivore'); END IF; END $$;"
 
       - name: Build
         run: go build -v ./...
 
       - name: Run tests
-        env:
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: |
+          cd backend
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+          go tool cover -func=coverage.txt
 
       - name: Store test artifacts
         if: always()
@@ -91,7 +122,7 @@ jobs:
           echo "=== Docker Info ==="
           docker info
           echo "=== PostgreSQL Status ==="
-          pg_isready -h localhost -p 5432
+          pg_isready -h postgres -p 5432
 
       - name: Clear golangci-lint cache
         run: |
@@ -105,3 +136,10 @@ jobs:
         with:
           version: latest
           args: --config=.golangci.yml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./backend/coverage.txt
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
