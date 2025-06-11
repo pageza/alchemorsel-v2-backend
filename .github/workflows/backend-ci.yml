@@ -40,6 +40,10 @@ jobs:
       DB_SSL_MODE: disable
       TEST_DB_PASSWORD: testpass
       TEST_JWT_SECRET: test-jwt-secret
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: testpass
+      TEST_REDIS_PASSWORD: testpass
 
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +83,8 @@ jobs:
               PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
               PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN RAISE EXCEPTION 'pgvector extension not properly installed'; END IF; END \$\$;"
               PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'dietary_preference') THEN CREATE TYPE dietary_preference AS ENUM ('vegetarian', 'vegan', 'pescatarian', 'omnivore', 'keto', 'paleo'); END IF; END \$\$;"
+              # Ensure database is clean for migrations
+              PGPASSWORD=testpass psql -h localhost -p 5432 -U testuser -d testdb -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
               exit 0
             fi
             echo "Waiting for PostgreSQL... attempt $i"
