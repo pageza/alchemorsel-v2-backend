@@ -12,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/driver/postgres"
@@ -20,7 +21,7 @@ import (
 )
 
 // SetupTestDatabase creates a test database instance using a containerized PostgreSQL with pgvector.
-func SetupTestDatabase(t *testing.T) *gorm.DB {
+func SetupTestDatabase(t *testing.T) *TestDatabase {
 	// Create a temporary directory for secrets
 	secretsDir, err := os.MkdirTemp("", "alchemorsel-test-secrets-*")
 	if err != nil {
@@ -194,5 +195,12 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 		<-ctx.Done()
 	})
 
-	return db
+	// Create the test database instance
+	testDB := &TestDatabase{
+		db:          db,
+		config:      cfg,
+		authService: service.NewAuthService(db, cfg.JWTSecret),
+	}
+
+	return testDB
 }
