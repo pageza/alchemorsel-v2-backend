@@ -59,7 +59,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string, pref
 		return nil, errors.New("username already taken")
 	}
 
-	// Hash password
+	// Hash the password using bcrypt
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
@@ -115,25 +115,22 @@ func (s *AuthService) Register(ctx context.Context, email, password string, pref
 	return &user, nil
 }
 
-// Login handles user login
+// Login handles user authentication
 func (s *AuthService) Login(ctx context.Context, email, password string) (*models.User, *models.UserProfile, error) {
 	var user models.User
 	if err := s.db.Where("email = ?", email).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, errors.New("invalid credentials")
-		}
-		return nil, nil, fmt.Errorf("failed to find user: %w", err)
+		return nil, nil, errors.New("invalid credentials")
 	}
 
-	// Get user profile for username
-	var profile models.UserProfile
-	if err := s.db.Where("user_id = ?", user.ID).First(&profile).Error; err != nil {
-		return nil, nil, fmt.Errorf("failed to find user profile: %w", err)
-	}
-
-	// Verify password
+	// Compare the provided password with the stored hash
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, nil, errors.New("invalid credentials")
+	}
+
+	// Get user profile
+	var profile models.UserProfile
+	if err := s.db.Where("user_id = ?", user.ID).First(&profile).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to get user profile: %w", err)
 	}
 
 	return &user, &profile, nil

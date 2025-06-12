@@ -12,6 +12,7 @@ RUN go mod download
 COPY . .
 
 # Build the application and migration binary
+RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -v -o main ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -v -o migrate ./cmd/migrate
 
@@ -27,6 +28,10 @@ RUN apt-get update && apt-get install -y ca-certificates golang && update-ca-cer
 
 # Copy go.mod and go.sum files
 COPY --from=builder /app/go.mod /app/go.sum ./
+
+# Ensure go.mod has the correct version before downloading dependencies
+RUN sed -i 's/go 1.23.0/go 1.23/' go.mod && \
+    sed -i '/^toolchain/d' go.mod
 
 # Download dependencies
 RUN go mod download
