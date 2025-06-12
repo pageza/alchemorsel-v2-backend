@@ -1,20 +1,39 @@
 name: Backend CI
 # To Trigger changes for CI
 on:
-  push:
-    branches: [ codex-1 ]
-  pull_request:
-    branches: [ codex-1 ]
+  workflow_dispatch:  # Only runs when manually triggered
+  # Commenting out automatic triggers
+  # push:
+  #   branches: [ pristine-working-point ]
+  # pull_request:
+  #   branches: [ pristine-working-point ]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+
+
+    env:
+      CI: true
+      SERVER_PORT: 8080
+      SERVER_HOST: localhost
+      TEST_JWT_SECRET: test-jwt-secret
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: testuser
+      DB_NAME: testdb
+      DB_SSL_MODE: disable
+      TEST_DB_PASSWORD: testpass
+
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -22,40 +41,76 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.23.0'
+          cache: true
 
-      - name: Install dependencies
-        run: go mod download
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Print environment for debugging
-        run: env | sort
+
+      - name: Start test database
+        run: |
+          docker run -d \
+            --name test-db \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpass \
+            -e POSTGRES_DB=testdb \
+            -p 5432:5432 \
+            pgvector/pgvector:pg16
+          
+          # Wait for database to be ready
+          for i in {1..30}; do
+            if docker exec test-db pg_isready -U testuser -d testdb; then
+              echo "Database is ready"
+              break
+            fi
+            echo "Waiting for database to be ready... (attempt $i/30)"
+            sleep 2
+          done
+
+      - name: Build
+        run: go build -v ./...
 
       - name: Run tests
-        run: go test -v -cover ./...
-        env:
-          CI: "true"
-          # TestContainers config
-          TESTCONTAINERS_RYUK_DISABLED: "true"
-          TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED: "true"
-          # Server config
-          SERVER_HOST: localhost
-          SERVER_PORT: 8080
-          # Database config
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: ${{ vars.TEST_DB_USER }}
-          TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          DB_NAME: ${{ vars.TEST_DB_NAME }}
-          DB_SSL_MODE: disable
-          # Redis config
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          TEST_REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
-          REDIS_URL: redis://:${{ secrets.TEST_REDIS_PASSWORD }}@localhost:6379/0
-          # Auth config
-          TEST_JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
-          # LLM config
-          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
+        run: |
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+          go tool cover -func=coverage.txt
+
+      - name: Store test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            coverage.txt
+            test-artifacts/
+
+      - name: Clear caches
+        if: always()
+        run: |
+          go clean -cache -modcache -i -r
+          docker system prune -f
+
+
+      - name: Print environment for debugging
+        if: failure()
+        run: |
+          echo "=== Environment Variables ==="
+          env | sort
+          echo "=== Go Version ==="
+          go version
+          echo "=== Go Modules ==="
+          go list -m all
+          echo "=== Docker Info ==="
+          docker info
+
 
       - name: Clear golangci-lint cache
         run: |
@@ -63,9 +118,48 @@ jobs:
           rm -rf ~/.cache/go-build
           rm -rf ~/go/pkg
 
+#       - name: Run tests
+#         run: go test -v -cover ./...
+#         env:
+#           CI: "true"
+#           # TestContainers config
+#           TESTCONTAINERS_RYUK_DISABLED: "true"
+#           TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED: "true"
+#           # Server config
+#           SERVER_HOST: localhost
+#           SERVER_PORT: 8080
+#           # Database config
+#           DB_HOST: localhost
+#           DB_PORT: 5432
+#           DB_USER: ${{ vars.TEST_DB_USER }}
+#           TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+#           DB_NAME: ${{ vars.TEST_DB_NAME }}
+#           DB_SSL_MODE: disable
+#           # Redis config
+#           REDIS_HOST: localhost
+#           REDIS_PORT: 6379
+#           TEST_REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
+#           REDIS_URL: redis://:${{ secrets.TEST_REDIS_PASSWORD }}@localhost:6379/0
+#           # Auth config
+#           TEST_JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+#           # LLM config
+#           LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
+
+
+
+
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
         continue-on-error: true
+
         with:
           version: latest
           args: --config=.golangci.yml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+

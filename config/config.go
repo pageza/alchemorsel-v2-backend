@@ -78,8 +78,11 @@ func loadCIConfig(cfg *Config) error {
 	cfg.RedisHost = os.Getenv("REDIS_HOST")
 	cfg.RedisPort = os.Getenv("REDIS_PORT")
 
-	// GitHub Actions secrets
+	// GitHub Actions secrets - use environment variables directly
 	cfg.DBPassword = os.Getenv("TEST_DB_PASSWORD")
+	if cfg.DBPassword == "" {
+		return fmt.Errorf("TEST_DB_PASSWORD environment variable is required in CI environment")
+	}
 	cfg.JWTSecret = os.Getenv("TEST_JWT_SECRET")
 	cfg.RedisPassword = os.Getenv("TEST_REDIS_PASSWORD")
 	cfg.RedisURL = os.Getenv("TEST_REDIS_URL")

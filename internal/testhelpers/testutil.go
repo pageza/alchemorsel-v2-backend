@@ -15,6 +15,7 @@ import (
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
+	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -36,27 +37,195 @@ func (db *TestDatabase) DB() *gorm.DB {
 	return db.db
 }
 
+// setupDatabase handles database initialization and migration
+func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase {
+	t.Log("[DEBUG] Starting database setup...")
+
+	// Create test database instance
+	testDB := &TestDatabase{
+		db:          db,
+		config:      cfg,
+		authService: service.NewAuthService(db, cfg.JWTSecret),
+	}
+	t.Log("[DEBUG] Test database instance created")
+
+	// Install pgvector extension
+	t.Log("[DEBUG] Installing pgvector extension...")
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		t.Logf("[ERROR] Failed to install pgvector extension: %v", err)
+		t.Fatalf("failed to install pgvector extension: %v", err)
+	}
+	t.Log("[DEBUG] pgvector extension installed successfully")
+
+	// Verify pgvector installation
+	t.Log("[DEBUG] Verifying pgvector installation...")
+	var extensionExists bool
+	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')").Scan(&extensionExists).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify pgvector extension: %v", err)
+		t.Fatalf("failed to verify pgvector extension: %v", err)
+	}
+	if !extensionExists {
+		t.Log("[ERROR] pgvector extension not found after installation")
+		t.Fatal("pgvector extension not found after installation")
+	}
+	t.Log("[DEBUG] pgvector extension verified successfully")
+
+	// Create dietary preference type enum
+	t.Log("[DEBUG] Creating dietary preference type enum...")
+	if err := db.Exec(`
+		DO $$ BEGIN
+			CREATE TYPE dietary_preference_type AS ENUM (
+				'vegetarian',
+				'vegan',
+				'pescatarian',
+				'gluten-free',
+				'dairy-free',
+				'nut-free',
+				'soy-free',
+				'egg-free',
+				'shellfish-free',
+				'custom'
+			);
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
+	`).Error; err != nil {
+		t.Logf("[ERROR] Failed to create dietary preference type: %v", err)
+		t.Fatalf("failed to create dietary preference type: %v", err)
+	}
+	t.Log("[DEBUG] Dietary preference type enum created successfully")
+
+	// Verify dietary preference type
+	t.Log("[DEBUG] Verifying dietary preference type...")
+	var typeExists bool
+	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = 'dietary_preference_type')").Scan(&typeExists).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify dietary preference type: %v", err)
+		t.Fatalf("failed to verify dietary preference type: %v", err)
+	}
+	if !typeExists {
+		t.Log("[ERROR] dietary_preference_type not found after creation")
+		t.Fatal("dietary_preference_type not found after creation")
+	}
+	t.Log("[DEBUG] Dietary preference type verified successfully")
+
+	// Auto-migrate the schema
+	t.Log("[DEBUG] Starting schema migration...")
+	t.Log("[DEBUG] Models to migrate: User, UserProfile, Recipe, RecipeFavorite, DietaryPreference, Allergen")
+
+	// First, create tables without the vector column
+	t.Log("[DEBUG] Creating initial tables without vector column...")
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.UserProfile{},
+		&models.RecipeFavorite{},
+		&models.DietaryPreference{},
+		&models.Allergen{},
+	); err != nil {
+		t.Logf("[ERROR] Initial migration failed: %v", err)
+		t.Fatalf("failed to migrate initial tables: %v", err)
+	}
+	t.Log("[DEBUG] Initial tables created successfully")
+
+	// Then, create the recipes table with vector column
+	t.Log("[DEBUG] Creating recipes table with vector column...")
+	if err := db.AutoMigrate(&models.Recipe{}); err != nil {
+		t.Logf("[ERROR] Recipe table migration failed: %v", err)
+		t.Logf("[DEBUG] Database connection details - Host: %s, Port: %s, User: %s, DB: %s, SSL: %s",
+			cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBName, cfg.DBSSLMode)
+		t.Fatalf("failed to migrate recipes table: %v", err)
+	}
+	t.Log("[DEBUG] Recipes table created successfully")
+
+	// Verify tables were created
+	t.Log("[DEBUG] Verifying table creation...")
+	var tables []string
+	if err := db.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&tables).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify tables: %v", err)
+		t.Fatalf("failed to verify tables: %v", err)
+	}
+
+	expectedTables := []string{
+		"users",
+		"user_profiles",
+		"recipes",
+		"recipe_favorites",
+		"dietary_preferences",
+		"allergens",
+	}
+
+	t.Logf("[DEBUG] Found tables: %v", tables)
+	t.Logf("[DEBUG] Expected tables: %v", expectedTables)
+
+	for _, expected := range expectedTables {
+		found := false
+		for _, table := range tables {
+			if table == expected {
+				found = true
+
+				break
+			}
+		}
+		if !found {
+			t.Logf("[ERROR] Expected table %s was not found in database", expected)
+			t.Fatalf("expected table %s was not created", expected)
+		}
+	}
+	t.Log("[DEBUG] All expected tables verified successfully")
+
+	// Verify vector column in recipes table
+	t.Log("[DEBUG] Verifying vector column in recipes table...")
+	var columnExists bool
+	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'embedding' AND data_type = 'USER-DEFINED')").Scan(&columnExists).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify vector column: %v", err)
+		t.Fatalf("failed to verify vector column: %v", err)
+	}
+	if !columnExists {
+		t.Log("[ERROR] vector column not found in recipes table")
+		t.Fatal("vector column not found in recipes table")
+	}
+	t.Log("[DEBUG] Vector column verified successfully")
+
+	// Verify vector column type
+	t.Log("[DEBUG] Verifying vector column type...")
+	var columnType string
+	if err := db.Raw("SELECT udt_name FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'embedding'").Scan(&columnType).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify vector column type: %v", err)
+		t.Fatalf("failed to verify vector column type: %v", err)
+	}
+	if columnType != "vector" {
+		t.Logf("[ERROR] Expected vector column type 'vector', got '%s'", columnType)
+		t.Fatalf("expected vector column type 'vector', got '%s'", columnType)
+	}
+	t.Log("[DEBUG] Vector column type verified successfully")
+
+	return testDB
+}
+
 // SetupTestDB creates a new test database using PostgreSQL testcontainer
 func SetupTestDB(t *testing.T) *TestDatabase {
+	t.Log("[DEBUG] Starting test database setup...")
 	ctx := context.Background()
 
 	// Set CI environment and required secrets
+	t.Log("[DEBUG] Setting up environment variables...")
 	os.Setenv("CI", "true")
 	os.Setenv("SERVER_PORT", "8080")
 	os.Setenv("SERVER_HOST", "localhost")
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_PORT", "5432")
-	os.Setenv("DB_USER", "postgres")
-	os.Setenv("DB_NAME", "alchemorsel")
+	os.Setenv("DB_USER", "testuser")
+	os.Setenv("DB_NAME", "testdb")
 	os.Setenv("DB_SSL_MODE", "disable")
 	os.Setenv("REDIS_HOST", "localhost")
 	os.Setenv("REDIS_PORT", "6379")
-	os.Setenv("TEST_DB_PASSWORD", "postpass")
+	os.Setenv("TEST_DB_PASSWORD", "testpass")
 	os.Setenv("TEST_JWT_SECRET", "test-jwt-secret")
 	os.Setenv("TEST_REDIS_PASSWORD", "test-redis-pass")
 	os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
+	t.Log("[DEBUG] Environment variables set successfully")
 
 	defer func() {
+		t.Log("[DEBUG] Cleaning up environment variables...")
 		os.Unsetenv("CI")
 		os.Unsetenv("SERVER_PORT")
 		os.Unsetenv("SERVER_HOST")
@@ -71,21 +240,25 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		os.Unsetenv("TEST_JWT_SECRET")
 		os.Unsetenv("TEST_REDIS_PASSWORD")
 		os.Unsetenv("TEST_REDIS_URL")
+		t.Log("[DEBUG] Environment variables cleaned up")
 	}()
 
 	// Load configuration
+	t.Log("[DEBUG] Loading configuration...")
 	cfg, err := config.LoadConfig()
 	if err != nil {
+		t.Logf("[ERROR] Failed to load configuration: %v", err)
 		t.Fatalf("failed to load configuration: %v", err)
 	}
+	t.Log("[DEBUG] Configuration loaded successfully")
 
 	// Debug logging
-	t.Logf("[DEBUG] cfg.DBHost: %s", cfg.DBHost)
-	t.Logf("[DEBUG] cfg.DBPort: %s", cfg.DBPort)
-	t.Logf("[DEBUG] cfg.DBUser: %s", cfg.DBUser)
-	t.Logf("[DEBUG] cfg.DBPassword: %s", cfg.DBPassword)
-	t.Logf("[DEBUG] cfg.DBName: %s", cfg.DBName)
-	t.Logf("[DEBUG] cfg.DBSSLMode: %s", cfg.DBSSLMode)
+	t.Logf("[DEBUG] DB_HOST: %s", cfg.DBHost)
+	t.Logf("[DEBUG] DB_PORT: %s", cfg.DBPort)
+	t.Logf("[DEBUG] DB_USER: %s", cfg.DBUser)
+	t.Logf("[DEBUG] DB_PASSWORD: %s", cfg.DBPassword)
+	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
+	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
 
 	// Use testcontainers for both CI and local environments
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -108,7 +281,10 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 						port.Port(),
 						cfg.DBName,
 						cfg.DBSSLMode)
-				}),
+				}).WithStartupTimeout(30*time.Second),
+				wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser, "-d", cfg.DBName}).
+					WithStartupTimeout(10*time.Second).
+					WithPollInterval(2*time.Second),
 			).WithStartupTimeout(60 * time.Second),
 		},
 		Started: true,
@@ -127,26 +303,42 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host,
-		mappedPort.Port(),
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBName,
-		cfg.DBSSLMode)
+	// Connect to database with retry logic
+	maxRetries := 5
+	retryDelay := 2 * time.Second
+	var db *gorm.DB
 
-	// Log connection attempt (without sensitive data)
-	t.Logf("Attempting to connect to database at %s:%s as user %s",
-		host,
-		mappedPort.Port(),
-		cfg.DBUser)
+	for i := 0; i < maxRetries; i++ {
+		dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			host,
+			mappedPort.Port(),
+			cfg.DBUser,
+			cfg.DBPassword,
+			cfg.DBName,
+			cfg.DBSSLMode)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+		t.Logf("Attempting to connect to database at %s:%s as user %s (attempt %d/%d)",
+			host,
+			mappedPort.Port(),
+			cfg.DBUser,
+			i+1,
+			maxRetries)
+
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err == nil {
+			break
+		}
+
+		t.Logf("Connection attempt %d failed: %v", i+1, err)
+		if i < maxRetries-1 {
+			time.Sleep(retryDelay)
+			retryDelay *= 2 // Exponential backoff
+		}
+	}
 	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
+		t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
 	}
 
 	// Register cleanup
@@ -162,63 +354,8 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 		<-ctx.Done()
 	})
 
-	// Create the test database instance
-	testDB := &TestDatabase{
-		db:          db,
-		config:      cfg,
-		authService: service.NewAuthService(db, cfg.JWTSecret),
-	}
-
-	return testDB
-}
-
-// setupDatabase performs common database setup tasks
-func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase {
-	// Install pgvector extension
-	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
-		t.Fatalf("failed to install pgvector extension: %v", err)
-	}
-
-	// Create dietary preference type enum
-	if err := db.Exec(`
-		DO $$ BEGIN
-			CREATE TYPE dietary_preference_type AS ENUM (
-				'vegetarian',
-				'vegan',
-				'pescatarian',
-				'gluten-free',
-				'dairy-free',
-				'nut-free',
-				'soy-free',
-				'egg-free',
-				'shellfish-free',
-				'custom'
-			);
-		EXCEPTION
-			WHEN duplicate_object THEN null;
-		END $$;
-	`).Error; err != nil {
-		t.Fatalf("failed to create dietary preference type: %v", err)
-	}
-
-	// Auto-migrate the schema
-	err := db.AutoMigrate(
-		&models.User{},
-		&models.UserProfile{},
-		&models.Recipe{},
-		&models.RecipeFavorite{},
-		&models.DietaryPreference{},
-		&models.Allergen{},
-	)
-	if err != nil {
-		t.Fatalf("failed to migrate test database: %v", err)
-	}
-
-	return &TestDatabase{
-		db:          db,
-		config:      cfg,
-		authService: service.NewAuthService(db, cfg.JWTSecret),
-	}
+	t.Log("[DEBUG] Setting up database...")
+	return setupDatabase(t, db, cfg)
 }
 
 // CreateTestUserAndToken creates a test user and returns their ID and a valid JWT token
@@ -286,17 +423,64 @@ func CreateTestProfile(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.User
 	return profile
 }
 
-// CreateTestRecipe creates a test recipe in the database
+// CreateTestRecipe creates a test recipe with the given user ID
 func CreateTestRecipe(t *testing.T, db *gorm.DB, userID uuid.UUID) *models.Recipe {
+	t.Log("[DEBUG] Creating test recipe...")
 	recipe := &models.Recipe{
-		UserID:       userID,
-		Name:         "Test Recipe",
-		Description:  "A test recipe",
-		Ingredients:  models.JSONBStringArray{"ingredient1", "ingredient2"},
-		Instructions: models.JSONBStringArray{"step1", "step2"},
+		Name:               "Test Recipe",
+		Description:        "Test Description",
+		UserID:             userID,
+		Category:           "Main Course",
+		Cuisine:            "Italian",
+		Ingredients:        []string{"ingredient1", "ingredient2"},
+		Instructions:       []string{"step1", "step2"},
+		Calories:           100,
+		Protein:            10,
+		Carbs:              20,
+		Fat:                5,
+		Embedding:          pgvector.NewVector([]float32{1.0, 2.0, 3.0}), // Example embedding
+		DietaryPreferences: []string{"vegetarian"},
+		Tags:               []string{"healthy", "quick"},
 	}
-	err := db.Create(recipe).Error
-	assert.NoError(t, err)
+
+	t.Log("[DEBUG] Saving test recipe to database...")
+	if err := db.Create(recipe).Error; err != nil {
+		t.Logf("[ERROR] Failed to create test recipe: %v", err)
+		t.Fatalf("failed to create test recipe: %v", err)
+	}
+	t.Log("[DEBUG] Test recipe created successfully")
+
+	// Verify recipe was created with vector
+	t.Log("[DEBUG] Verifying test recipe creation...")
+	var savedRecipe models.Recipe
+	if err := db.First(&savedRecipe, recipe.ID).Error; err != nil {
+		t.Logf("[ERROR] Failed to verify test recipe: %v", err)
+		t.Fatalf("failed to verify test recipe: %v", err)
+	}
+
+	// Verify vector embedding
+	t.Log("[DEBUG] Verifying vector embedding...")
+	// The vector should be initialized with zeros by the BeforeCreate hook
+	zeroVector := make([]float32, 1536)
+	expectedVector := pgvector.NewVector(zeroVector)
+
+	// Compare vectors by converting to slices
+	savedVec := savedRecipe.Embedding.Slice()
+	expectedVec := expectedVector.Slice()
+
+	if len(savedVec) != len(expectedVec) {
+		t.Logf("[ERROR] Vector length mismatch: got %d, want %d", len(savedVec), len(expectedVec))
+		t.Fatal("vector length mismatch")
+	}
+
+	for i := range savedVec {
+		if savedVec[i] != expectedVec[i] {
+			t.Logf("[ERROR] Vector mismatch at index %d: got %f, want %f", i, savedVec[i], expectedVec[i])
+			t.Fatal("vector mismatch")
+		}
+	}
+	t.Log("[DEBUG] Vector embedding verified successfully")
+
 	return recipe
 }
 

@@ -103,12 +103,20 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 	if len(req.Embedding) > 0 {
 		embedding = pgvector.NewVector(req.Embedding)
 	} else {
-		// Create a default embedding vector with 1536 dimensions
-		defaultEmbedding := make([]float32, 1536)
-		for i := range defaultEmbedding {
-			defaultEmbedding[i] = float32(i) / 1536.0
+		// Generate embedding from recipe data
+		var err error
+		embedding, err = h.embeddingService.GenerateEmbeddingFromRecipe(
+			req.Name,
+			req.Description,
+			req.Ingredients,
+			req.Category,
+			req.DietaryPreferences,
+		)
+		if err != nil {
+			fmt.Printf("[DEBUG] Error generating embedding: %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate embedding"})
+			return
 		}
-		embedding = pgvector.NewVector(defaultEmbedding)
 	}
 
 	recipe := &models.Recipe{

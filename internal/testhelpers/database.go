@@ -11,6 +11,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
+	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/driver/postgres"
@@ -19,8 +20,25 @@ import (
 )
 
 // SetupTestDatabase creates a test database instance using a containerized PostgreSQL with pgvector.
-func SetupTestDatabase(t *testing.T) *gorm.DB {
-	ctx := context.Background()
+
+func SetupTestDatabase(t *testing.T) *TestDatabase {
+	// Create a temporary directory for secrets
+	secretsDir, err := os.MkdirTemp("", "alchemorsel-test-secrets-*")
+	if err != nil {
+		t.Fatalf("failed to create temporary secrets directory: %v", err)
+	}
+
+	// Set the secrets directory environment variable
+	os.Setenv("SECRETS_DIR", secretsDir)
+	defer os.Unsetenv("SECRETS_DIR")
+
+	// Clean up the temporary directory after the test
+	t.Cleanup(func() {
+		if err := os.RemoveAll(secretsDir); err != nil {
+			t.Errorf("failed to remove temporary secrets directory: %v", err)
+		}
+	})
+
 
 	// Set CI environment and required secrets
 	os.Setenv("CI", "true")
@@ -224,5 +242,12 @@ func SetupTestDatabase(t *testing.T) *gorm.DB {
 		<-ctx.Done()
 	})
 
-	return db
+	// Create the test database instance
+	testDB := &TestDatabase{
+		db:          db,
+		config:      cfg,
+		authService: service.NewAuthService(db, cfg.JWTSecret),
+	}
+
+	return testDB
 }

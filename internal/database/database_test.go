@@ -22,7 +22,7 @@ func TestDatabase(t *testing.T) {
 		PasswordHash: "hashedpassword",
 	}
 
-	err := db.Create(&user).Error
+	err := db.DB().Create(&user).Error
 	assert.NoError(t, err)
 	assert.NotZero(t, user.ID)
 

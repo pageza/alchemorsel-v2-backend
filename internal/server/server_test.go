@@ -18,14 +18,14 @@ import (
 func TestServer(t *testing.T) {
 	// Use the exported SetupTestDatabase from testhelpers package
 	db := testhelpers.SetupTestDatabase(t)
-	defer db.Migrator().DropTable(&models.Recipe{}, &models.User{}, &models.UserProfile{})
+	defer db.DB().Migrator().DropTable(&models.Recipe{}, &models.User{}, &models.UserProfile{})
 
 	// Create services
-	authService := service.NewAuthService(db, "test-secret")
-	profileService := service.NewProfileService(db)
+	authService := service.NewAuthService(db.DB(), "test-secret")
+	profileService := service.NewProfileService(db.DB())
 
 	// Create server
-	server := NewServer(db, authService, profileService)
+	server := NewServer(db.DB(), authService, profileService)
 
 	// Test server initialization
 	err := server.Start("8080")

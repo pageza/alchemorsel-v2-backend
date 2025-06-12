@@ -14,14 +14,13 @@ import (
 	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 	"github.com/stretchr/testify/assert"
-	"gorm.io/gorm"
 )
 
-func setupAuthTest(t *testing.T) (*gin.Engine, *gorm.DB, *service.AuthService) {
+func setupAuthTest(t *testing.T) (*gin.Engine, *testhelpers.TestDatabase, *service.AuthService) {
 	gin.SetMode(gin.TestMode)
 	db := testhelpers.SetupTestDatabase(t)
 
-	authSvc := service.NewAuthService(db, "test-secret")
+	authSvc := service.NewAuthService(db.DB(), "test-secret")
 	router := gin.New()
 	router.Use(gin.Recovery())
 
@@ -50,7 +49,7 @@ func setupAuthTest(t *testing.T) (*gin.Engine, *gorm.DB, *service.AuthService) {
 
 		// Get user profile for username
 		var profile models.UserProfile
-		if err := db.Where("user_id = ?", user.ID).First(&profile).Error; err != nil {
+		if err := db.DB().Where("user_id = ?", user.ID).First(&profile).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -108,7 +107,7 @@ func setupAuthTest(t *testing.T) (*gin.Engine, *gorm.DB, *service.AuthService) {
 
 func TestRegisterMissingPrefs(t *testing.T) {
 	router, db, authSvc := setupAuthTest(t)
-	defer db.Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
 
 	// Test registration without preferences
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(`{
@@ -136,7 +135,7 @@ func TestRegisterMissingPrefs(t *testing.T) {
 
 	// Verify user was created
 	var user models.User
-	if err := db.Where("email = ?", "t@example.com").First(&user).Error; err != nil {
+	if err := db.DB().Where("email = ?", "t@example.com").First(&user).Error; err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
@@ -155,7 +154,7 @@ func TestRegisterMissingPrefs(t *testing.T) {
 
 func TestRegisterWithPrefs(t *testing.T) {
 	router, db, _ := setupAuthTest(t)
-	defer db.Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
 
 	// Test registration with preferences
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(`{
@@ -183,12 +182,12 @@ func TestRegisterWithPrefs(t *testing.T) {
 
 	// Verify user was created
 	var user models.User
-	if err := db.Where("email = ?", "t2@example.com").First(&user).Error; err != nil {
+	if err := db.DB().Where("email = ?", "t2@example.com").First(&user).Error; err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
 	// Verify token claims
-	claims, err := service.NewAuthService(db, "test-secret").ValidateToken(response.Token)
+	claims, err := service.NewAuthService(db.DB(), "test-secret").ValidateToken(response.Token)
 	if err != nil {
 		t.Fatalf("failed to validate token: %v", err)
 	}
@@ -202,7 +201,7 @@ func TestRegisterWithPrefs(t *testing.T) {
 
 func TestLogin(t *testing.T) {
 	router, db, authSvc := setupAuthTest(t)
-	defer db.Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
 
 	// Register a user first
 	user, err := authSvc.Register(nil, "t3@example.com", "password123", &types.UserPreferences{
@@ -249,7 +248,7 @@ func TestLogin(t *testing.T) {
 
 func TestLoginInvalidCredentials(t *testing.T) {
 	router, db, authSvc := setupAuthTest(t)
-	defer db.Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
 
 	// Register a user first
 	_, err := authSvc.Register(nil, "t4@example.com", "password123", &types.UserPreferences{
@@ -287,7 +286,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	router, db, _ := setupAuthTest(t)
-	defer db.Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
 
 	// Test registration
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(`{
