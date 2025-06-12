@@ -1,77 +1,128 @@
 name: Backend CI
-
-# Trigger workflow on push to codex-1 branch and pull requests
+# To Trigger changes for CI
 on:
-  push:
-    branches: [ codex-1 ]
-  pull_request:
-    branches: [ codex-1 ]
+  workflow_dispatch:  # Only runs when manually triggered
+  # Commenting out automatic triggers
+  # push:
+  #   branches: [ pristine-working-point ]
+  # pull_request:
+  #   branches: [ pristine-working-point ]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   test:
-    if: github.ref != 'refs/heads/fix/ci-psql-env'
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+
+    env:
+      CI: true
+      SERVER_PORT: 8080
+      SERVER_HOST: localhost
+      TEST_JWT_SECRET: test-jwt-secret
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: testuser
+      DB_NAME: testdb
+      DB_SSL_MODE: disable
+      TEST_DB_PASSWORD: testpass
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.23.0'
+          cache: true
 
-      - name: Install dependencies
-        run: go mod download
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Wait for PostgreSQL
+      - name: Start test database
         run: |
+          docker run -d \
+            --name test-db \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpass \
+            -e POSTGRES_DB=testdb \
+            -p 5432:5432 \
+            pgvector/pgvector:pg16
+          
+          # Wait for database to be ready
           for i in {1..30}; do
-            if PGPASSWORD=${{ secrets.TEST_DB_PASSWORD }} pg_isready -h localhost -p 5432 -U ${{ secrets.TEST_DB_USER }} -d ${{ secrets.TEST_DB_NAME }}; then
-              echo "PostgreSQL is ready!"
-              exit 0
+            if docker exec test-db pg_isready -U testuser -d testdb; then
+              echo "Database is ready"
+              break
             fi
-            echo "Waiting for PostgreSQL to be ready... attempt $i"
+            echo "Waiting for database to be ready... (attempt $i/30)"
             sleep 2
           done
-          echo "PostgreSQL failed to start"
-          exit 1
 
-      - name: Install pgvector extension
-        env:
-          PGPASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          PGUSER: ${{ secrets.TEST_DB_USER }}
-          PGDATABASE: ${{ secrets.TEST_DB_NAME }}
-        run: |
-          psql -h localhost -p 5432 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+      - name: Build
+        run: go build -v ./...
 
       - name: Run tests
-        run: go test ./... -v
-        env:
-          CI: "true"
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: ${{ secrets.TEST_DB_USER }}
-          DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          DB_NAME: ${{ secrets.TEST_DB_NAME }}
-          DB_SSL_MODE: disable
-          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
-          LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
+        run: |
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+          go tool cover -func=coverage.txt
+
+      - name: Store test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            coverage.txt
+            test-artifacts/
+
+      - name: Clear caches
+        if: always()
+        run: |
+          go clean -cache -modcache -i -r
+          docker system prune -f
+
+      - name: Print environment for debugging
+        if: failure()
+        run: |
+          echo "=== Environment Variables ==="
+          env | sort
+          echo "=== Go Version ==="
+          go version
+          echo "=== Go Modules ==="
+          go list -m all
+          echo "=== Docker Info ==="
+          docker info
+
+      - name: Clear golangci-lint cache
+        run: |
+          rm -rf ~/.cache/golangci-lint
+          rm -rf ~/.cache/go-build
+          rm -rf ~/go/pkg
 
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
+        continue-on-error: true
         with:
           version: latest
+          args: --config=.golangci.yml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}

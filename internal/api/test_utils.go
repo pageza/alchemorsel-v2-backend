@@ -100,6 +100,12 @@ func SetupTestDB(t *testing.T) *TestDB {
 		t.Fatalf("failed to connect to database: %v", err)
 	}
 
+	// Get underlying sql.DB to ensure proper cleanup
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get underlying sql.DB: %v", err)
+	}
+
 	// Install pgvector extension
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector;").Error; err != nil {
 		t.Fatalf("failed to install pgvector extension: %v", err)
@@ -121,6 +127,11 @@ func SetupTestDB(t *testing.T) *TestDB {
 
 	// Register cleanup
 	t.Cleanup(func() {
+		// Close database connection
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection: %v", err)
+		}
+		// Terminate container
 		if err := container.Terminate(ctx); err != nil {
 			t.Errorf("failed to terminate container: %v", err)
 		}
@@ -200,6 +211,14 @@ func SetupTestRouter(t *testing.T) *gin.Engine {
 	protected := v1.Group("")
 	protected.Use(middleware.AuthMiddleware(testDB.AuthService))
 	recipeHandler.RegisterRoutes(protected)
+
+	// Register cleanup for router
+	t.Cleanup(func() {
+		// Force close any remaining connections
+		if sqlDB, err := testDB.DB.DB(); err == nil {
+			sqlDB.Close()
+		}
+	})
 
 	return router
 }

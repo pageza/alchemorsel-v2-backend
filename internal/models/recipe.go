@@ -41,6 +41,7 @@ func (a *JSONBStringArray) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, a)
 }
 
+// Recipe represents a recipe in the system
 type Recipe struct {
 	ID                 uuid.UUID        `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
 	CreatedAt          time.Time        `json:"created_at"`
@@ -63,6 +64,15 @@ type Recipe struct {
 	Tags               JSONBStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"tags"`
 }
 
+// BeforeCreate is a GORM hook that ensures the embedding vector is properly initialized
+func (r *Recipe) BeforeCreate(tx *gorm.DB) error {
+	// Initialize with a zero vector of the correct dimension
+	zeroVector := make([]float32, 1536)
+	r.Embedding = pgvector.NewVector(zeroVector)
+	return nil
+}
+
+// RecipeFavorite represents a user's favorite recipe
 type RecipeFavorite struct {
 	ID        uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
