@@ -13,6 +13,7 @@ import (
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers/mocks"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -61,9 +62,7 @@ func TestGetProfile(t *testing.T) {
 	profileHandler.GetProfile(c)
 
 	// Assert response
-	if w.Code != http.StatusOK {
-		t.Fatalf("Expected status code %d, got %d", http.StatusOK, w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp struct {
 		Profile models.UserProfile `json:"profile"`
@@ -72,9 +71,12 @@ func TestGetProfile(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	if len(resp.Recipes) != len(expectedRecipes) {
-		t.Fatalf("expected %d recipes got %d", len(expectedRecipes), len(resp.Recipes))
-	}
+	assert.Equal(t, expectedProfile.Username, resp.Profile.Username)
+	assert.Equal(t, expectedProfile.Bio, resp.Profile.Bio)
+	assert.Equal(t, len(expectedRecipes), len(resp.Recipes))
+
+	// Verify mock expectations
+	mockProfileService.AssertExpectations(t)
 }
 
 func TestUpdateProfile(t *testing.T) {
@@ -121,9 +123,15 @@ func TestUpdateProfile(t *testing.T) {
 
 	profileHandler.UpdateProfile(c)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status %d got %d", http.StatusOK, w.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 
+	var resp models.UserProfile
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	assert.Equal(t, expectedProfile.Username, resp.Username)
+	assert.Equal(t, expectedProfile.Bio, resp.Bio)
+
+	// Verify mock expectations
 	mockProfileService.AssertExpectations(t)
 }

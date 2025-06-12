@@ -16,6 +16,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+
     env:
       CI: true
       SERVER_PORT: 8080
@@ -28,6 +29,7 @@ jobs:
       DB_NAME: testdb
       DB_SSL_MODE: disable
       TEST_DB_PASSWORD: testpass
+
 
     steps:
       - name: Checkout code
@@ -51,6 +53,7 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+
 
       - name: Start test database
         run: |
@@ -95,6 +98,7 @@ jobs:
           go clean -cache -modcache -i -r
           docker system prune -f
 
+
       - name: Print environment for debugging
         if: failure()
         run: |
@@ -107,15 +111,47 @@ jobs:
           echo "=== Docker Info ==="
           docker info
 
+
       - name: Clear golangci-lint cache
         run: |
           rm -rf ~/.cache/golangci-lint
           rm -rf ~/.cache/go-build
           rm -rf ~/go/pkg
 
+#       - name: Run tests
+#         run: go test -v -cover ./...
+#         env:
+#           CI: "true"
+#           # TestContainers config
+#           TESTCONTAINERS_RYUK_DISABLED: "true"
+#           TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED: "true"
+#           # Server config
+#           SERVER_HOST: localhost
+#           SERVER_PORT: 8080
+#           # Database config
+#           DB_HOST: localhost
+#           DB_PORT: 5432
+#           DB_USER: ${{ vars.TEST_DB_USER }}
+#           TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+#           DB_NAME: ${{ vars.TEST_DB_NAME }}
+#           DB_SSL_MODE: disable
+#           # Redis config
+#           REDIS_HOST: localhost
+#           REDIS_PORT: 6379
+#           TEST_REDIS_PASSWORD: ${{ secrets.TEST_REDIS_PASSWORD }}
+#           REDIS_URL: redis://:${{ secrets.TEST_REDIS_PASSWORD }}@localhost:6379/0
+#           # Auth config
+#           TEST_JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+#           # LLM config
+#           LLM_API_KEY: ${{ secrets.TEST_LLM_API_KEY }}
+
+
+
+
       - name: Run linter
         uses: golangci/golangci-lint-action@v3
         continue-on-error: true
+
         with:
           version: latest
           args: --config=.golangci.yml
@@ -126,3 +162,4 @@ jobs:
           file: ./coverage.txt
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
+
