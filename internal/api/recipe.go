@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -12,6 +15,13 @@ import (
 	pgvector "github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
 )
+
+// recipeValidationResult represents the response from recipe validation
+type recipeValidationResult struct {
+	QualityScore       float64  `json:"quality_score"`
+	Suggestions        []string `json:"suggestions"`
+	NutritionalBalance float64  `json:"nutritional_balance"`
+}
 
 // RecipeHandler handles recipe-related requests
 type RecipeHandler struct {
@@ -43,6 +53,8 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 		recipes.DELETE("/:id", h.DeleteRecipe)
 		recipes.POST("/:id/favorite", h.FavoriteRecipe)
 		recipes.DELETE("/:id/favorite", h.UnfavoriteRecipe)
+		recipes.POST("/:id/modify", h.ModifyRecipe)
+		recipes.POST("/:id/validate", h.ValidateRecipe)
 	}
 }
 
@@ -308,4 +320,147 @@ func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
 func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
 	// TODO: Implement unfavorite functionality
 	c.Status(http.StatusNotImplemented)
+}
+
+// ModifyRecipe handles recipe modifications like scaling, substitutions, and dietary adaptations
+func (h *RecipeHandler) ModifyRecipe(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
+		return
+	}
+
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID"})
+		return
+	}
+
+	// Get the original recipe
+	recipe, err := h.recipeService.GetRecipe(c.Request.Context(), recipeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		ScaleFactor        float64           `json:"scale_factor,omitempty"`
+		Substitutions      map[string]string `json:"substitutions,omitempty"`
+		DietaryPreferences []string          `json:"dietary_preferences,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Convert recipe to RecipeDraft for modification
+	draft := &service.RecipeDraft{
+		ID:           recipe.ID.String(),
+		Name:         recipe.Name,
+		Description:  recipe.Description,
+		Category:     recipe.Category,
+		Ingredients:  recipe.Ingredients,
+		Instructions: recipe.Instructions,
+		Calories:     recipe.Calories,
+		Protein:      recipe.Protein,
+		Carbs:        recipe.Carbs,
+		Fat:          recipe.Fat,
+		UserID:       recipe.UserID.String(),
+	}
+
+	// Generate modification query based on request
+	var query string
+	if req.ScaleFactor > 0 {
+		query = fmt.Sprintf("Scale this recipe by a factor of %.2f", req.ScaleFactor)
+	} else if len(req.Substitutions) > 0 {
+		subs := make([]string, 0, len(req.Substitutions))
+		for from, to := range req.Substitutions {
+			subs = append(subs, fmt.Sprintf("%s to %s", from, to))
+		}
+		query = fmt.Sprintf("Substitute %s in this recipe", strings.Join(subs, ", "))
+	} else if len(req.DietaryPreferences) > 0 {
+		query = fmt.Sprintf("Adapt this recipe for %s diet", strings.Join(req.DietaryPreferences, ", "))
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no modification specified"})
+		return
+	}
+
+	// Generate modified recipe
+	recipeJSON, err := h.llmService.GenerateRecipe(query, req.DietaryPreferences, []string{}, draft)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var modifiedRecipe service.RecipeDraft
+	if err := json.Unmarshal([]byte(recipeJSON), &modifiedRecipe); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse modified recipe"})
+		return
+	}
+
+	c.JSON(http.StatusOK, modifiedRecipe)
+}
+
+// ValidateRecipe handles recipe quality validation
+func (h *RecipeHandler) ValidateRecipe(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
+		return
+	}
+
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID"})
+		return
+	}
+
+	// Get the recipe
+	recipe, err := h.recipeService.GetRecipe(c.Request.Context(), recipeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Convert recipe to RecipeDraft for validation
+	draft := &service.RecipeDraft{
+		ID:           recipe.ID.String(),
+		Name:         recipe.Name,
+		Description:  recipe.Description,
+		Category:     recipe.Category,
+		Ingredients:  recipe.Ingredients,
+		Instructions: recipe.Instructions,
+		Calories:     recipe.Calories,
+		Protein:      recipe.Protein,
+		Carbs:        recipe.Carbs,
+		Fat:          recipe.Fat,
+		UserID:       recipe.UserID.String(),
+	}
+
+	// Generate validation query
+	query := "Validate this recipe for quality, nutritional balance, and provide suggestions for improvement"
+
+	// Generate validation result
+	recipeJSON, err := h.llmService.GenerateRecipe(query, []string{}, []string{}, draft)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var validationResult recipeValidationResult
+	if err := json.Unmarshal([]byte(recipeJSON), &validationResult); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse validation result"})
+		return
+	}
+
+	c.JSON(http.StatusOK, validationResult)
 }

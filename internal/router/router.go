@@ -48,6 +48,8 @@ func SetupRouter(
 			recipes.POST("", recipeHandler.CreateRecipe)
 			recipes.PUT("/:id", recipeHandler.UpdateRecipe)
 			recipes.DELETE("/:id", recipeHandler.DeleteRecipe)
+			recipes.POST("/:id/modify", recipeHandler.ModifyRecipe)
+			recipes.POST("/:id/validate", recipeHandler.ValidateRecipe)
 		}
 
 		// LLM routes

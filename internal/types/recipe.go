@@ -26,3 +26,10 @@ type Recipe struct {
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
+
+// RecipeModificationRequest represents a request to modify a recipe
+type RecipeModificationRequest struct {
+	ScaleFactor        float64           `json:"scale_factor,omitempty"`
+	Substitutions      map[string]string `json:"substitutions,omitempty"`
+	DietaryPreferences []string          `json:"dietary_preferences,omitempty"`
+}

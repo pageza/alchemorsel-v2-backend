@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
+	"gorm.io/gorm"
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/mocks"
@@ -333,6 +334,115 @@ func setupTestRouter(authService *mocks.MockAuthService, profileService *mocks.M
 		}
 
 		c.Status(http.StatusNoContent)
+	})
+
+	router.POST("/api/v1/recipes/:id/modify", middleware.AuthMiddleware(authService), func(c *gin.Context) {
+		id, err := uuid.Parse(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID"})
+			return
+		}
+
+		var req types.RecipeModificationRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		recipe, err := recipeService.GetRecipe(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Apply modifications based on request
+		if req.ScaleFactor > 0 {
+			recipe.Calories = recipe.Calories * req.ScaleFactor
+			recipe.Protein = recipe.Protein * req.ScaleFactor
+			recipe.Carbs = recipe.Carbs * req.ScaleFactor
+			recipe.Fat = recipe.Fat * req.ScaleFactor
+		}
+
+		if len(req.Substitutions) > 0 {
+			for oldIng, newIng := range req.Substitutions {
+				for i, ing := range recipe.Ingredients {
+					if ing == oldIng {
+						recipe.Ingredients[i] = newIng
+					}
+				}
+			}
+		}
+
+		if len(req.DietaryPreferences) > 0 {
+			recipe.DietaryPreferences = req.DietaryPreferences
+		}
+
+		updatedRecipe, err := recipeService.UpdateRecipe(c.Request.Context(), id, recipe)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, updatedRecipe)
+	})
+
+	router.POST("/api/v1/recipes/:id/validate", middleware.AuthMiddleware(authService), func(c *gin.Context) {
+		id, err := uuid.Parse(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID"})
+			return
+		}
+
+		recipe, err := recipeService.GetRecipe(c.Request.Context(), id)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Calculate quality score based on recipe properties
+		qualityScore := 0.0
+		if len(recipe.Ingredients) > 0 {
+			qualityScore += 0.3
+		}
+		if len(recipe.Instructions) > 0 {
+			qualityScore += 0.3
+		}
+		if recipe.Calories > 0 {
+			qualityScore += 0.2
+		}
+		if recipe.Protein > 0 || recipe.Carbs > 0 || recipe.Fat > 0 {
+			qualityScore += 0.2
+		}
+
+		// Calculate nutritional balance
+		nutritionalBalance := 0.0
+		if recipe.Protein > 0 && recipe.Carbs > 0 && recipe.Fat > 0 {
+			nutritionalBalance = 1.0
+		}
+
+		// Generate suggestions
+		suggestions := []string{}
+		if len(recipe.Ingredients) < 3 {
+			suggestions = append(suggestions, "Consider adding more ingredients for better flavor complexity")
+		}
+		if len(recipe.Instructions) < 3 {
+			suggestions = append(suggestions, "Consider adding more detailed instructions")
+		}
+		if recipe.Calories == 0 {
+			suggestions = append(suggestions, "Add calorie information for better nutritional tracking")
+		}
+
+		result := recipeValidationResult{
+			QualityScore:       qualityScore,
+			Suggestions:        suggestions,
+			NutritionalBalance: nutritionalBalance,
+		}
+
+		c.JSON(http.StatusOK, result)
 	})
 
 	// Add route for getting all recipes
