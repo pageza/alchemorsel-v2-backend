@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,9 @@ type TestDB struct {
 
 // SetupTestDB creates a test database and services
 func SetupTestDB(t *testing.T) *TestDB {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not installed, skipping container-based test")
+	}
 	ctx := context.Background()
 
 	// Create PostgreSQL container

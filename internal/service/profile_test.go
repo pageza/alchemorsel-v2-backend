@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not installed, skipping container-based test")
+	}
 	ctx := context.Background()
 
 	// Create PostgreSQL container

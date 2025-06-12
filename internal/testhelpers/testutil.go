@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -202,6 +203,9 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 
 // SetupTestDB creates a new test database using PostgreSQL testcontainer
 func SetupTestDB(t *testing.T) *TestDatabase {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not installed, skipping container-based test")
+	}
 	t.Log("[DEBUG] Starting test database setup...")
 	ctx := context.Background()
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -21,6 +22,9 @@ import (
 
 // SetupTestDatabase creates a test database instance using a containerized PostgreSQL with pgvector.
 func SetupTestDatabase(t *testing.T) *gorm.DB {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not installed, skipping container-based test")
+	}
 	// Create a temporary directory for secrets
 	secretsDir, err := os.MkdirTemp("", "alchemorsel-test-secrets-*")
 	if err != nil {
