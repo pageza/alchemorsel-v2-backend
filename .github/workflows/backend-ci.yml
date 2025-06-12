@@ -1,10 +1,12 @@
 name: Backend CI
 # To Trigger changes for CI
 on:
-  push:
-    branches: [ pristine-working-point ]
-  pull_request:
-    branches: [ pristine-working-point ]
+  workflow_dispatch:  # Only runs when manually triggered
+  # Commenting out automatic triggers
+  # push:
+  #   branches: [ pristine-working-point ]
+  # pull_request:
+  #   branches: [ pristine-working-point ]
 
 permissions:
   contents: read
