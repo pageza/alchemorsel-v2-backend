@@ -161,6 +161,7 @@ func setupDatabase(t *testing.T, db *gorm.DB, cfg *config.Config) *TestDatabase 
 		for _, table := range tables {
 			if table == expected {
 				found = true
+
 				break
 			}
 		}
