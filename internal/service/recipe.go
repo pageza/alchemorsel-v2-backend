@@ -63,13 +63,16 @@ func (s *RecipeService) DeleteRecipe(ctx context.Context, id uuid.UUID) error {
 	return s.db.Delete(&models.Recipe{}, "id = ?", id).Error
 }
 
-// ListRecipes lists recipes for a user
-func (s *RecipeService) ListRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error) {
+// ListRecipes lists recipes for a user or all users if userID is nil
+func (s *RecipeService) ListRecipes(ctx context.Context, userID *uuid.UUID) ([]*models.Recipe, error) {
 	var recipes []models.Recipe
-	if err := s.db.Where("user_id = ?", userID).Find(&recipes).Error; err != nil {
+	query := s.db
+	if userID != nil {
+		query = query.Where("user_id = ?", *userID)
+	}
+	if err := query.Find(&recipes).Error; err != nil {
 		return nil, err
 	}
-
 	// Convert to []*models.Recipe
 	result := make([]*models.Recipe, len(recipes))
 	for i := range recipes {

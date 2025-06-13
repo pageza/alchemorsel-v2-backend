@@ -11,9 +11,13 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	// Create handlers
 	authHandler := NewAuthHandler(authService, db)
 	recipeHandler := NewRecipeHandler(service.NewRecipeService(db, embeddingService), authService, llmService, embeddingService)
+	llmHandler := NewLLMHandler(db, authService.(*service.AuthService), llmService)
+	profileHandler := NewProfileHandler(service.NewProfileService(db), authService)
 
 	// Register routes
 	v1 := router.Group("/api/v1")
 	authHandler.RegisterRoutes(v1)
 	recipeHandler.RegisterRoutes(v1)
+	llmHandler.RegisterRoutes(v1)
+	profileHandler.RegisterRoutes(v1)
 }

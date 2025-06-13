@@ -102,9 +102,13 @@ type Message struct {
 
 // Request represents a request to the DeepSeek API
 type Request struct {
-	Model          string            `json:"model"`
-	Messages       []Message         `json:"messages"`
-	ResponseFormat map[string]string `json:"response_format"`
+	Model            string            `json:"model"`
+	Messages         []Message         `json:"messages"`
+	ResponseFormat   map[string]string `json:"response_format"`
+	Temperature      float64           `json:"temperature"`
+	TopP             float64           `json:"top_p"`
+	FrequencyPenalty float64           `json:"frequency_penalty"`
+	PresencePenalty  float64           `json:"presence_penalty"`
 }
 
 // Macros represents nutritional macros information
@@ -302,6 +306,10 @@ The cuisine field MUST be one of the listed cuisines above.`,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
+		Temperature:      0.9, // Higher temperature for more creativity
+		TopP:             0.9, // Higher top_p for more diverse outputs
+		FrequencyPenalty: 0.5, // Penalize repeated tokens
+		PresencePenalty:  0.5, // Encourage new topics
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -470,6 +478,10 @@ Please provide each recipe as a separate JSON object in an array.`,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
+		Temperature:      0.9, // Higher temperature for more creativity
+		TopP:             0.9, // Higher top_p for more diverse outputs
+		FrequencyPenalty: 0.5, // Penalize repeated tokens
+		PresencePenalty:  0.5, // Encourage new topics
 	}
 
 	// Marshal the request

@@ -42,6 +42,6 @@ type IRecipeService interface {
 	GetRecipe(ctx context.Context, id uuid.UUID) (*models.Recipe, error)
 	UpdateRecipe(ctx context.Context, id uuid.UUID, recipe *models.Recipe) (*models.Recipe, error)
 	DeleteRecipe(ctx context.Context, id uuid.UUID) error
-	ListRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error)
+	ListRecipes(ctx context.Context, userID *uuid.UUID) ([]*models.Recipe, error)
 	SearchRecipes(ctx context.Context, query string) ([]*models.Recipe, error)
 }

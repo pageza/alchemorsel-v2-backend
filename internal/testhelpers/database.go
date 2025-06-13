@@ -39,7 +39,6 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 		}
 	})
 
-
 	// Set CI environment and required secrets
 	os.Setenv("CI", "true")
 	os.Setenv("SERVER_PORT", "8080")

@@ -289,8 +289,15 @@ func (h *RecipeHandler) DeleteRecipe(c *gin.Context) {
 
 // ListRecipes handles listing recipes with optional filters
 func (h *RecipeHandler) ListRecipes(c *gin.Context) {
-	userID := c.MustGet("user_id").(uuid.UUID)
-	recipes, err := h.recipeService.ListRecipes(c.Request.Context(), userID)
+	all := c.DefaultQuery("all", "false") == "true"
+	var recipes []*models.Recipe
+	var err error
+	if all {
+		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), nil)
+	} else {
+		userID := c.MustGet("user_id").(uuid.UUID)
+		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), &userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
