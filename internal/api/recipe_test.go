@@ -355,3 +355,186 @@ func setupRecipeTestRouter(t *testing.T) (*gin.Engine, *TestDB) {
 
 	return router, testDB
 }
+
+func TestFavoriteRecipe(t *testing.T) {
+	router, testDB := setupRecipeTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	// Create a test recipe first
+	recipeID := createTestRecipe(t, router, token)
+
+	// Test adding to favorites
+	req := httptest.NewRequest("POST", "/api/v1/recipes/"+recipeID+"/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Recipe added to favorites", response["message"])
+	assert.Equal(t, true, response["is_favorite"])
+
+	// Test adding the same recipe to favorites again (should return 409)
+	req = httptest.NewRequest("POST", "/api/v1/recipes/"+recipeID+"/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 409, w.Code)
+}
+
+func TestUnfavoriteRecipe(t *testing.T) {
+	router, testDB := setupRecipeTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	// Create a test recipe first
+	recipeID := createTestRecipe(t, router, token)
+
+	// Add to favorites first
+	req := httptest.NewRequest("POST", "/api/v1/recipes/"+recipeID+"/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	// Test removing from favorites
+	req = httptest.NewRequest("DELETE", "/api/v1/recipes/"+recipeID+"/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Recipe removed from favorites", response["message"])
+	assert.Equal(t, false, response["is_favorite"])
+
+	// Test removing from favorites again (should return 404)
+	req = httptest.NewRequest("DELETE", "/api/v1/recipes/"+recipeID+"/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestFavoriteRecipeNotFound(t *testing.T) {
+	router, testDB := setupRecipeTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	// Test favoriting a non-existent recipe with valid UUID format
+	req := httptest.NewRequest("POST", "/api/v1/recipes/00000000-0000-0000-0000-000000000000/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestFavoriteRecipeUnauthorized(t *testing.T) {
+	router, _ := setupRecipeTestRouter(t)
+
+	// Test without authentication
+	req := httptest.NewRequest("POST", "/api/v1/recipes/some-id/favorite", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 401, w.Code)
+}
+
+func TestGetRecipeWithFavoriteStatus(t *testing.T) {
+	router, testDB := setupRecipeTestRouter(t)
+
+	// Create test user and get token
+	_, token := CreateTestUserAndToken(t, testDB)
+
+	// Create a test recipe
+	recipeID := createTestRecipe(t, router, token)
+
+	// Get recipe (should not be favorite initially)
+	req := httptest.NewRequest("GET", "/api/v1/recipes/"+recipeID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	recipeData := response["recipe"].(map[string]interface{})
+	assert.Equal(t, false, recipeData["is_favorite"])
+
+	// Add to favorites
+	req = httptest.NewRequest("POST", "/api/v1/recipes/"+recipeID+"/favorite", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	// Get recipe again (should be favorite now)
+	req = httptest.NewRequest("GET", "/api/v1/recipes/"+recipeID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	recipeData = response["recipe"].(map[string]interface{})
+	assert.Equal(t, true, recipeData["is_favorite"])
+}
+
+// Helper function to create a test recipe and return its ID
+func createTestRecipe(t *testing.T, router *gin.Engine, token string) string {
+	// Create a default embedding vector with 1536 dimensions
+	defaultEmbedding := make([]float32, 1536)
+	for i := range defaultEmbedding {
+		defaultEmbedding[i] = float32(i) / 1536.0
+	}
+
+	recipe := map[string]interface{}{
+		"name":                "Test Recipe",
+		"description":         "Test Description",
+		"category":            "Test Category",
+		"cuisine":             "Test Cuisine",
+		"image_url":           "http://example.com/image.jpg",
+		"ingredients":         []string{"ingredient1", "ingredient2"},
+		"instructions":        []string{"step1", "step2"},
+		"calories":            500,
+		"protein":             20,
+		"carbs":               30,
+		"fat":                 10,
+		"dietary_preferences": []string{"vegetarian", "gluten-free"},
+		"tags":                []string{"quick", "healthy"},
+		"embedding":           defaultEmbedding,
+	}
+
+	jsonData, err := json.Marshal(recipe)
+	if err != nil {
+		t.Fatalf("Failed to marshal recipe: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/v1/recipes", io.NopCloser(bytes.NewBuffer(jsonData)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != 201 {
+		t.Fatalf("Failed to create test recipe: %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	recipeData := response["recipe"].(map[string]interface{})
+	return recipeData["id"].(string)
+}

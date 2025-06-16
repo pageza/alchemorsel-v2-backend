@@ -127,3 +127,81 @@ func (s *RecipeService) SearchRecipes(ctx context.Context, query string) ([]*mod
 	}
 	return result, nil
 }
+
+// GetRecipeWithFavoriteStatus retrieves a recipe by ID and returns its favorite status for the user
+func (s *RecipeService) GetRecipeWithFavoriteStatus(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*models.Recipe, bool, error) {
+	recipe, err := s.GetRecipe(ctx, id)
+	if err != nil {
+		return nil, false, err
+	}
+
+	isFavorite, err := s.IsRecipeFavorited(ctx, userID, id)
+	if err != nil {
+		return recipe, false, err
+	}
+
+	return recipe, isFavorite, nil
+}
+
+// FavoriteRecipe adds a recipe to user's favorites
+func (s *RecipeService) FavoriteRecipe(ctx context.Context, userID uuid.UUID, recipeID uuid.UUID) error {
+	// Check if recipe exists
+	var recipe models.Recipe
+	if err := s.db.First(&recipe, "id = ?", recipeID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return gorm.ErrRecordNotFound
+		}
+		return err
+	}
+
+	// Check if already favorited (excluding soft-deleted records)
+	var existing models.RecipeFavorite
+	if err := s.db.Where("user_id = ? AND recipe_id = ?", userID, recipeID).First(&existing).Error; err == nil {
+		// Already favorited
+		return gorm.ErrDuplicatedKey
+	} else if err != gorm.ErrRecordNotFound {
+		return err
+	}
+
+	// Check if there's a soft-deleted favorite we can restore
+	var softDeleted models.RecipeFavorite
+	if err := s.db.Unscoped().Where("user_id = ? AND recipe_id = ? AND deleted_at IS NOT NULL", userID, recipeID).First(&softDeleted).Error; err == nil {
+		// Restore the soft-deleted favorite
+		return s.db.Unscoped().Model(&softDeleted).Update("deleted_at", nil).Error
+	}
+
+	// Create new favorite
+	favorite := models.RecipeFavorite{
+		UserID:   userID,
+		RecipeID: recipeID,
+	}
+
+	return s.db.Create(&favorite).Error
+}
+
+// UnfavoriteRecipe removes a recipe from user's favorites
+func (s *RecipeService) UnfavoriteRecipe(ctx context.Context, userID uuid.UUID, recipeID uuid.UUID) error {
+	// Check if favorite exists
+	var favorite models.RecipeFavorite
+	if err := s.db.Where("user_id = ? AND recipe_id = ?", userID, recipeID).First(&favorite).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return gorm.ErrRecordNotFound
+		}
+		return err
+	}
+
+	// Delete the favorite
+	return s.db.Delete(&favorite).Error
+}
+
+// IsRecipeFavorited checks if a recipe is favorited by the user
+func (s *RecipeService) IsRecipeFavorited(ctx context.Context, userID uuid.UUID, recipeID uuid.UUID) (bool, error) {
+	var count int64
+	err := s.db.Model(&models.RecipeFavorite{}).
+		Where("user_id = ? AND recipe_id = ?", userID, recipeID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

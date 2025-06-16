@@ -40,8 +40,12 @@ type IProfileService interface {
 type IRecipeService interface {
 	CreateRecipe(ctx context.Context, recipe *models.Recipe) (*models.Recipe, error)
 	GetRecipe(ctx context.Context, id uuid.UUID) (*models.Recipe, error)
+	GetRecipeWithFavoriteStatus(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*models.Recipe, bool, error)
 	UpdateRecipe(ctx context.Context, id uuid.UUID, recipe *models.Recipe) (*models.Recipe, error)
 	DeleteRecipe(ctx context.Context, id uuid.UUID) error
 	ListRecipes(ctx context.Context, userID *uuid.UUID) ([]*models.Recipe, error)
 	SearchRecipes(ctx context.Context, query string) ([]*models.Recipe, error)
+	FavoriteRecipe(ctx context.Context, userID uuid.UUID, recipeID uuid.UUID) error
+	UnfavoriteRecipe(ctx context.Context, userID uuid.UUID, recipeID uuid.UUID) error
+	IsRecipeFavorited(ctx context.Context, userID uuid.UUID, recipeID uuid.UUID) (bool, error)
 }

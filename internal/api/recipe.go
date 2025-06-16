@@ -160,8 +160,12 @@ func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 	// Authentication is optional for viewing recipes
 	userIDVal, exists := c.Get("user_id")
 	fmt.Printf("[DEBUG] user_id value: %#v\n", userIDVal)
+	var userID uuid.UUID
+	var userAuthenticated bool
 	if exists {
-		if userID, ok := userIDVal.(uuid.UUID); ok {
+		if uid, ok := userIDVal.(uuid.UUID); ok {
+			userID = uid
+			userAuthenticated = true
 			fmt.Printf("[DEBUG] user_id: %s\n", userID.String())
 		}
 	}
@@ -180,7 +184,18 @@ func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 		return
 	}
 
-	recipe, err := h.recipeService.GetRecipe(c.Request.Context(), recipeID)
+	var recipe *models.Recipe
+	var isFavorite bool
+
+	if userAuthenticated {
+		// Get recipe with favorite status
+		recipe, isFavorite, err = h.recipeService.GetRecipeWithFavoriteStatus(c.Request.Context(), recipeID, userID)
+	} else {
+		// Get recipe without favorite status
+		recipe, err = h.recipeService.GetRecipe(c.Request.Context(), recipeID)
+		isFavorite = false
+	}
+
 	if err != nil {
 		fmt.Printf("[DEBUG] Error getting recipe: %v\n", err)
 		if err == gorm.ErrRecordNotFound {
@@ -197,7 +212,29 @@ func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 		recipe.Ingredients, recipe.Instructions, recipe.Calories, recipe.Protein, recipe.Carbs, recipe.Fat,
 		recipe.UserID, recipe.DietaryPreferences, recipe.Tags)
 
-	c.JSON(http.StatusOK, gin.H{"recipe": recipe})
+	// Create response with recipe data
+	recipeResponse := map[string]interface{}{
+		"id":                  recipe.ID,
+		"created_at":          recipe.CreatedAt,
+		"updated_at":          recipe.UpdatedAt,
+		"name":                recipe.Name,
+		"description":         recipe.Description,
+		"category":            recipe.Category,
+		"cuisine":             recipe.Cuisine,
+		"image_url":           recipe.ImageURL,
+		"ingredients":         recipe.Ingredients,
+		"instructions":        recipe.Instructions,
+		"calories":            recipe.Calories,
+		"protein":             recipe.Protein,
+		"carbs":               recipe.Carbs,
+		"fat":                 recipe.Fat,
+		"user_id":             recipe.UserID,
+		"dietary_preferences": recipe.DietaryPreferences,
+		"tags":                recipe.Tags,
+		"is_favorite":         isFavorite,
+	}
+
+	c.JSON(http.StatusOK, gin.H{"recipe": recipeResponse})
 }
 
 // UpdateRecipe handles updating a recipe
@@ -319,12 +356,92 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 
 // FavoriteRecipe handles favoriting a recipe
 func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
-	// TODO: Implement favorite functionality
-	c.Status(http.StatusNotImplemented)
+	// Get user ID from context
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Get recipe ID from URL params
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
+		return
+	}
+
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID format"})
+		return
+	}
+
+	// Favorite the recipe
+	err = h.recipeService.FavoriteRecipe(c.Request.Context(), userID, recipeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not found"})
+			return
+		}
+		if err == gorm.ErrDuplicatedKey {
+			c.JSON(http.StatusConflict, gin.H{"error": "recipe already favorited"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Recipe added to favorites",
+		"is_favorite": true,
+	})
 }
 
 // UnfavoriteRecipe handles unfavoriting a recipe
 func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
-	// TODO: Implement unfavorite functionality
-	c.Status(http.StatusNotImplemented)
+	// Get user ID from context
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Get recipe ID from URL params
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
+		return
+	}
+
+	recipeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe ID format"})
+		return
+	}
+
+	// Unfavorite the recipe
+	err = h.recipeService.UnfavoriteRecipe(c.Request.Context(), userID, recipeID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "recipe not in favorites"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Recipe removed from favorites",
+		"is_favorite": false,
+	})
 }

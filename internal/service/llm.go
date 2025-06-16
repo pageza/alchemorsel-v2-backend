@@ -1,13 +1,10 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
 	"github.com/redis/go-redis/v9"
+	"github.com/trustsight-io/deepseek-go"
 )
 
 // RecipeData represents the structure of a recipe as returned by the LLM
@@ -34,13 +32,14 @@ type RecipeData struct {
 
 // LLMService handles interactions with the DeepSeek API
 type LLMService struct {
-	apiKey string
-	apiURL string
-	redis  *redis.Client
+	client         *deepseek.Client
+	redis          *redis.Client
+	jsonExtractor  *deepseek.JSONExtractor
 }
 
 // NewLLMService creates a new LLMService instance
 func NewLLMService() (*LLMService, error) {
+	// Get API key with fallback to file
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
 	if apiKey == "" {
 		apiKeyFile := os.Getenv("DEEPSEEK_API_KEY_FILE")
@@ -59,10 +58,61 @@ func NewLLMService() (*LLMService, error) {
 		}
 	}
 
-	apiURL := os.Getenv("DEEPSEEK_API_URL")
-	if apiURL == "" {
-		apiURL = "https://api.deepseek.com/v1/chat/completions"
+	// Create DeepSeek client with options
+	var clientOpts []deepseek.ClientOption
+	
+	// Set custom API URL if provided
+	if apiURL := os.Getenv("DEEPSEEK_API_URL"); apiURL != "" {
+		clientOpts = append(clientOpts, deepseek.WithBaseURL(apiURL))
 	}
+	
+	// Enable debug mode if requested
+	if os.Getenv("DEEPSEEK_DEBUG") == "true" {
+		clientOpts = append(clientOpts, deepseek.WithDebug(true))
+	}
+	
+	// Configure retry logic for handling rate limits and temporary failures
+	clientOpts = append(clientOpts, deepseek.WithMaxRetries(3))
+	clientOpts = append(clientOpts, deepseek.WithRetryWaitTime(2*time.Second))
+
+	client, err := deepseek.NewClient(apiKey, clientOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DeepSeek client: %w", err)
+	}
+
+	// Define JSON schema for recipe data validation
+	recipeSchema := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"name": {"type": "string", "minLength": 1},
+			"description": {"type": "string", "minLength": 1},
+			"category": {"type": "string", "minLength": 1},
+			"cuisine": {"type": "string", "minLength": 1},
+			"ingredients": {
+				"type": "array",
+				"items": {"type": "string", "minLength": 1},
+				"minItems": 1
+			},
+			"instructions": {
+				"type": "array",
+				"items": {"type": "string", "minLength": 1},
+				"minItems": 1
+			},
+			"prep_time": {"type": "string", "minLength": 1},
+			"cook_time": {"type": "string", "minLength": 1},
+			"servings": {"type": "string", "minLength": 1},
+			"difficulty": {"type": "string", "enum": ["Easy", "Medium", "Hard"]},
+			"calories": {"type": "number", "minimum": 0},
+			"protein": {"type": "number", "minimum": 0},
+			"carbs": {"type": "number", "minimum": 0},
+			"fat": {"type": "number", "minimum": 0}
+		},
+		"required": ["name", "description", "category", "ingredients", "instructions", "prep_time", "cook_time", "servings", "difficulty", "calories", "protein", "carbs", "fat"],
+		"additionalProperties": false
+	}`)
+
+	// Create JSON extractor with schema validation
+	jsonExtractor := deepseek.NewJSONExtractor(recipeSchema)
 
 	// Initialize Redis client with environment variables
 	redisHost := os.Getenv("REDIS_HOST")
@@ -88,29 +138,12 @@ func NewLLMService() (*LLMService, error) {
 	})
 
 	return &LLMService{
-		apiKey: apiKey,
-		apiURL: apiURL,
-		redis:  redisClient,
+		client:        client,
+		redis:         redisClient,
+		jsonExtractor: jsonExtractor,
 	}, nil
 }
 
-// Message represents a message in the chat
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// Request represents a request to the DeepSeek API
-type Request struct {
-	Model            string            `json:"model"`
-	Messages         []Message         `json:"messages"`
-	ResponseFormat   map[string]string `json:"response_format"`
-	MaxTokens        int               `json:"max_tokens,omitempty"`
-	Temperature      float64           `json:"temperature"`
-	TopP             float64           `json:"top_p"`
-	FrequencyPenalty float64           `json:"frequency_penalty"`
-	PresencePenalty  float64           `json:"presence_penalty"`
-}
 
 // Macros represents nutritional macros information
 type Macros struct {
@@ -239,8 +272,9 @@ func (s *LLMService) DeleteDraft(ctx context.Context, id string) error {
 	return nil
 }
 
-// GenerateRecipe generates a recipe using the DeepSeek API
+// GenerateRecipe generates a recipe using the DeepSeek API with proper JSON extraction
 func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
+	// Build the user prompt based on request type
 	var prompt string
 	if originalRecipe != nil {
 		// For modifications, include the original recipe in the prompt
@@ -262,9 +296,10 @@ func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []stri
 		}
 	}
 
-	messages := []Message{
+	// Create messages using the DeepSeek client Message type
+	messages := []deepseek.Message{
 		{
-			Role: "system",
+			Role: deepseek.RoleSystem,
 			Content: `You are a professional chef and nutritionist. Please provide your response in JSON format with the following structure:
 {
     "name": "Recipe name",
@@ -296,241 +331,115 @@ The category field MUST be one of the listed categories above.
 The cuisine field MUST be one of the listed cuisines above.`,
 		},
 		{
-			Role:    "user",
+			Role:    deepseek.RoleUser,
 			Content: prompt,
 		},
 	}
 
-	reqBody := Request{
+	// Create request using the DeepSeek client
+	request := deepseek.ChatCompletionRequest{
 		Model:    "deepseek-chat",
 		Messages: messages,
-		ResponseFormat: map[string]string{
-			"type": "json_object",
+		ResponseFormat: &struct {
+			Type string `json:"type"`
+		}{
+			Type: "json_object",
 		},
-		MaxTokens:        4096, // Much higher limit to prevent cutoff
-		Temperature:      0.7,  // Standard temperature for balanced creativity
-		TopP:             0.9,  // Higher top_p for more diverse outputs
-		FrequencyPenalty: 0.5,  // Penalize repeated tokens
+		MaxTokens:        4096, // Prevent cutoff
+		Temperature:      0.7,  // Balanced creativity
+		TopP:             0.9,  // Diverse outputs
+		FrequencyPenalty: 0.5,  // Penalize repetition
 		PresencePenalty:  0.5,  // Encourage new topics
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	// Make the API call using the client with enhanced error handling
+	log.Printf("[LLMService] Making recipe generation request for query: %s", query)
+	ctx := context.Background()
+	response, err := s.client.CreateChatCompletion(ctx, &request)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		log.Printf("[LLMService] API call failed: %v", err)
+		return "", fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", s.apiURL, bytes.NewBuffer(jsonData))
+	// Validate response structure
+	if len(response.Choices) == 0 {
+		log.Printf("[LLMService] No choices returned in API response")
+		return "", fmt.Errorf("no response choices from API")
+	}
+
+	log.Printf("[LLMService] Received response with %d choices", len(response.Choices))
+
+	// Extract JSON using the JSONExtractor with schema validation
+	var recipeData RecipeData
+	if err := s.jsonExtractor.ExtractJSON(response, &recipeData); err != nil {
+		log.Printf("[LLMService] JSON extraction failed: %v", err)
+		log.Printf("[LLMService] Raw response content: %s", response.Choices[0].Message.Content)
+		return "", fmt.Errorf("failed to extract JSON from response: %w", err)
+	}
+
+	log.Printf("[LLMService] Successfully extracted recipe: %s", recipeData.Name)
+
+	// Marshal the validated recipe data back to JSON string
+	recipeJSON, err := json.Marshal(recipeData)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", fmt.Errorf("failed to marshal validated recipe data: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
-
-	// Create HTTP client with longer timeout for complex recipe generation
-	client := &http.Client{
-		Timeout: 120 * time.Second, // Increased to 120 seconds for complex recipes
-	}
-	
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API request failed with status %d", resp.StatusCode)
-	}
-
-	// Read response with detailed logging
-	fmt.Printf("[LLMHandler] Response status: %d\n", resp.StatusCode)
-	fmt.Printf("[LLMHandler] Response headers: %v\n", resp.Header)
-	
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	fmt.Printf("[LLMHandler] Raw response length: %d bytes\n", len(body))
-	fmt.Printf("[LLMHandler] RAW DEEPSEEK RESPONSE: %s\n", string(body))
-	
-	// Check if response was potentially truncated
-	if len(body) > 0 && !strings.HasSuffix(string(body), "}") {
-		fmt.Printf("[LLMHandler] WARNING: Response appears truncated (doesn't end with })\n")
-	}
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.NewDecoder(bytes.NewBuffer(body)).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("no response from API")
-	}
-
-	// Apply JSON fixes before returning
-	content := result.Choices[0].Message.Content
-	fmt.Printf("[LLMHandler] EXTRACTED CONTENT BEFORE FIXES: %s\n", content)
-	content = fixDeepSeekJSON(content)
-	fmt.Printf("[LLMHandler] EXTRACTED CONTENT AFTER FIXES: %s\n", content)
-	
-	return content, nil
+	return string(recipeJSON), nil
 }
 
-// fixDeepSeekJSON fixes common JSON formatting issues from DeepSeek API
-func fixDeepSeekJSON(content string) string {
-	fmt.Printf("[LLMHandler] Fixing DeepSeek JSON formatting issues...\n")
-	
-	// 1. Fix incomplete JSON (missing closing brace)
-	trimmed := strings.TrimSpace(content)
-	if !strings.HasSuffix(trimmed, "}") {
-		fmt.Printf("[LLMHandler] Adding missing closing brace\n")
-		// Remove trailing comma if present
-		if strings.HasSuffix(trimmed, ",") {
-			trimmed = strings.TrimSuffix(trimmed, ",")
-		}
-		// Handle incomplete field values by closing them properly
-		if strings.HasSuffix(trimmed, `"difficulty": "Easy"`) ||
-		   strings.HasSuffix(trimmed, `"difficulty": "Medium"`) ||
-		   strings.HasSuffix(trimmed, `"difficulty": "Hard"`) {
-			content = trimmed + "\n}"
-		} else if strings.Contains(trimmed, `"difficulty":`) {
-			// If difficulty field is incomplete, fix it
-			lastCommaIndex := strings.LastIndex(trimmed, ",")
-			if lastCommaIndex > 0 {
-				content = trimmed[:lastCommaIndex] + "\n}"
-			} else {
-				content = trimmed + "\n}"
-			}
-		} else {
-			content = trimmed + "\n}"
-		}
-	}
-	
-	// 2. Fix single quotes to double quotes for JSON compliance
-	if strings.Contains(content, "'") {
-		fmt.Printf("[LLMHandler] Converting single quotes to double quotes\n")
-		content = strings.ReplaceAll(content, "'", "\"")
-	}
-	
-	// 3. Fix double double quotes (if any)
-	if strings.Contains(content, `""`) {
-		fmt.Printf("[LLMHandler] Fixing double quotes\n")
-		content = strings.ReplaceAll(content, `""`, `"`)
-	}
-	
-	// 4. Remove empty string entries in arrays
-	if strings.Contains(content, `""`) || strings.Contains(content, `"",`) {
-		fmt.Printf("[LLMHandler] Cleaning up empty entries\n")
-		content = strings.ReplaceAll(content, `,\n        ""`, "")
-		content = strings.ReplaceAll(content, `""`, "")
-	}
-	
-	// 5. Fix incomplete field values with missing quotes
-	if strings.Contains(content, `"difficulty": Easy`) {
-		fmt.Printf("[LLMHandler] Fixing missing quotes around difficulty value\n")
-		content = strings.ReplaceAll(content, `"difficulty": Easy`, `"difficulty": "Easy"`)
-	}
-	if strings.Contains(content, `"difficulty": Medium`) {
-		content = strings.ReplaceAll(content, `"difficulty": Medium`, `"difficulty": "Medium"`)
-	}
-	if strings.Contains(content, `"difficulty": Hard`) {
-		content = strings.ReplaceAll(content, `"difficulty": Hard`, `"difficulty": "Hard"`)
-	}
-	
-	fmt.Printf("[LLMHandler] JSON formatting fixes applied\n")
-	return content
-}
 
-// CalculateMacros estimates the macronutrients for a set of ingredients
+// CalculateMacros estimates the macronutrients for a set of ingredients using the DeepSeek client
 func (s *LLMService) CalculateMacros(ingredients []string) (*Macros, error) {
 	prompt := "Provide an approximate macronutrient breakdown as JSON with fields calories, protein, carbs and fat for the following ingredients:" + "\n" + strings.Join(ingredients, "\n")
-	messages := []Message{
+	
+	messages := []deepseek.Message{
 		{
-			Role:    "system",
+			Role:    deepseek.RoleSystem,
 			Content: "You are a nutrition expert. Respond only with JSON like {\"calories\":0,\"protein\":0,\"carbs\":0,\"fat\":0}",
 		},
 		{
-			Role:    "user",
+			Role:    deepseek.RoleUser,
 			Content: prompt,
 		},
 	}
 
-	reqBody := Request{
+	request := deepseek.ChatCompletionRequest{
 		Model:    "deepseek-chat",
 		Messages: messages,
-		ResponseFormat: map[string]string{
-			"type": "json_object",
+		ResponseFormat: &struct {
+			Type string `json:"type"`
+		}{
+			Type: "json_object",
 		},
+		Temperature: 0.3, // Lower temperature for more consistent nutrition data
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	ctx := context.Background()
+	response, err := s.client.CreateChatCompletion(ctx, &request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", s.apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read error response: %w", readErr)
-		}
-		log.Printf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no response from API")
+	// Extract the content from the first choice
+	if len(response.Choices) == 0 {
+		return nil, fmt.Errorf("no response choices from API")
 	}
 
 	var macros Macros
-	if err := json.Unmarshal([]byte(result.Choices[0].Message.Content), &macros); err != nil {
-		return nil, fmt.Errorf("failed to parse macros: %w", err)
+	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &macros); err != nil {
+		return nil, fmt.Errorf("failed to parse macros from response: %w", err)
 	}
 
 	return &macros, nil
 }
 
-// GenerateRecipesBatch generates multiple recipes in a single batch
+// GenerateRecipesBatch generates multiple recipes in a single batch using the DeepSeek client
 func (s *LLMService) GenerateRecipesBatch(prompts []string) ([]string, error) {
 	// Create a batch request with all prompts
-	messages := []Message{
+	messages := []deepseek.Message{
 		{
-			Role: "system",
+			Role: deepseek.RoleSystem,
 			Content: `You are a professional chef and nutritionist. For each recipe prompt, provide your response in JSON format with the following structure:
 {
     "name": "Recipe name",
@@ -558,18 +467,20 @@ Please provide each recipe as a separate JSON object in an array.`,
 
 	// Add all prompts as user messages
 	for _, prompt := range prompts {
-		messages = append(messages, Message{
-			Role:    "user",
+		messages = append(messages, deepseek.Message{
+			Role:    deepseek.RoleUser,
 			Content: fmt.Sprintf("Generate a recipe for: %s", prompt),
 		})
 	}
 
 	// Create the request
-	req := Request{
+	request := deepseek.ChatCompletionRequest{
 		Model:    "deepseek-chat",
 		Messages: messages,
-		ResponseFormat: map[string]string{
-			"type": "json_object",
+		ResponseFormat: &struct {
+			Type string `json:"type"`
+		}{
+			Type: "json_object",
 		},
 		Temperature:      0.9, // Higher temperature for more creativity
 		TopP:             0.9, // Higher top_p for more diverse outputs
@@ -577,54 +488,11 @@ Please provide each recipe as a separate JSON object in an array.`,
 		PresencePenalty:  0.5, // Encourage new topics
 	}
 
-	// Marshal the request
-	reqBody, err := json.Marshal(req)
+	// Make the API call with the client
+	ctx := context.Background()
+	response, err := s.client.CreateChatCompletion(ctx, &request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	httpReq, err := http.NewRequest("POST", s.apiURL, bytes.NewBuffer(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+s.apiKey)
-
-	// Send request
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Check for errors
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// After receiving the response from DeepSeek, before parsing:
-	log.Printf("Raw DeepSeek response: %s", string(body))
-
-	// Parse response
-	var response struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse API response: %v", err)
+		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
 	if len(response.Choices) == 0 {
