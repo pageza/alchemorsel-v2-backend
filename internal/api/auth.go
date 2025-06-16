@@ -59,7 +59,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		UserID:   user.ID,
 		Username: req.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(user.CreatedAt.Add(24 * 3600 * 1e9)),
+			ExpiresAt: jwt.NewNumericDate(user.CreatedAt.Add(3 * 3600 * 1e9)), // 3 hours for improved security
 			IssuedAt:  jwt.NewNumericDate(user.CreatedAt),
 		},
 	}
