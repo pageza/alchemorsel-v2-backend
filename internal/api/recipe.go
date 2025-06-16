@@ -34,15 +34,20 @@ func NewRecipeHandler(recipeService service.IRecipeService, authService service.
 // RegisterRoutes registers the recipe routes
 func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 	recipes := router.Group("/recipes")
-	recipes.Use(middleware.AuthMiddleware(h.authService))
+	
+	// Public routes (no authentication required)
+	recipes.GET("", h.ListRecipes)
+	recipes.GET("/:id", h.GetRecipe)
+	
+	// Protected routes (authentication required)
+	protected := recipes.Group("")
+	protected.Use(middleware.AuthMiddleware(h.authService))
 	{
-		recipes.GET("", h.ListRecipes)
-		recipes.GET("/:id", h.GetRecipe)
-		recipes.POST("", h.CreateRecipe)
-		recipes.PUT("/:id", h.UpdateRecipe)
-		recipes.DELETE("/:id", h.DeleteRecipe)
-		recipes.POST("/:id/favorite", h.FavoriteRecipe)
-		recipes.DELETE("/:id/favorite", h.UnfavoriteRecipe)
+		protected.POST("", h.CreateRecipe)
+		protected.PUT("/:id", h.UpdateRecipe)
+		protected.DELETE("/:id", h.DeleteRecipe)
+		protected.POST("/:id/favorite", h.FavoriteRecipe)
+		protected.DELETE("/:id/favorite", h.UnfavoriteRecipe)
 	}
 }
 
@@ -151,20 +156,16 @@ func (h *RecipeHandler) CreateRecipe(c *gin.Context) {
 func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 	println("[DEBUG] GetRecipe called")
 	fmt.Printf("[DEBUG] Context keys: %v\n", c.Keys)
+	
+	// Authentication is optional for viewing recipes
 	userIDVal, exists := c.Get("user_id")
 	fmt.Printf("[DEBUG] user_id value: %#v\n", userIDVal)
-	if !exists {
-		fmt.Println("[DEBUG] user_id missing from context. Responding 401 Unauthorized.")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
+	if exists {
+		if userID, ok := userIDVal.(uuid.UUID); ok {
+			fmt.Printf("[DEBUG] user_id: %s\n", userID.String())
+		}
 	}
-	userID, ok := userIDVal.(uuid.UUID)
-	if !ok {
-		fmt.Printf("[DEBUG] user_id is not uuid.UUID, got: %T\n", userIDVal)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
-	}
-	fmt.Printf("[DEBUG] user_id: %s\n", userID.String())
+	
 	id := c.Param("id")
 	fmt.Printf("[DEBUG] Recipe ID param: %s\n", id)
 	if id == "" {
@@ -292,11 +293,22 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 	all := c.DefaultQuery("all", "false") == "true"
 	var recipes []*models.Recipe
 	var err error
-	if all {
+	
+	// Check if user is authenticated (optional for this endpoint)
+	userIDValue, exists := c.Get("user_id")
+	var userID *uuid.UUID
+	if exists {
+		if uid, ok := userIDValue.(uuid.UUID); ok {
+			userID = &uid
+		}
+	}
+	
+	if all || !exists {
+		// Return all recipes if explicitly requested or if user is not authenticated
 		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), nil)
 	} else {
-		userID := c.MustGet("user_id").(uuid.UUID)
-		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), &userID)
+		// Return user's recipes if authenticated and not requesting all
+		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), userID)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

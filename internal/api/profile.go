@@ -42,12 +42,7 @@ func (h *ProfileHandler) RegisterRoutes(router *gin.RouterGroup) {
 }
 
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
-	userIDStr := c.MustGet("user_id").(string)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-		return
-	}
+	userID := c.MustGet("user_id").(uuid.UUID)
 
 	profile, err := h.profileService.GetProfile(c.Request.Context(), userID)
 	if err != nil {
@@ -74,12 +69,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	userIDStr := c.MustGet("user_id").(string)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-		return
-	}
+	userID := c.MustGet("user_id").(uuid.UUID)
 	profile, err := h.profileService.UpdateProfile(c.Request.Context(), userID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -89,12 +79,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 }
 
 func (h *ProfileHandler) Logout(c *gin.Context) {
-	userIDStr := c.MustGet("user_id").(string)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-		return
-	}
+	userID := c.MustGet("user_id").(uuid.UUID)
 	if err := h.profileService.Logout(c.Request.Context(), userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -103,12 +88,7 @@ func (h *ProfileHandler) Logout(c *gin.Context) {
 }
 
 func (h *ProfileHandler) GetUserRecipes(c *gin.Context) {
-	userIDStr := c.MustGet("user_id").(string)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-		return
-	}
+	userID := c.MustGet("user_id").(uuid.UUID)
 	recipes, err := h.profileService.GetUserRecipes(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -118,12 +98,7 @@ func (h *ProfileHandler) GetUserRecipes(c *gin.Context) {
 }
 
 func (h *ProfileHandler) GetProfileHistory(c *gin.Context) {
-	userIDStr := c.MustGet("user_id").(string)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-		return
-	}
+	userID := c.MustGet("user_id").(uuid.UUID)
 	history, err := h.profileService.GetProfileHistory(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

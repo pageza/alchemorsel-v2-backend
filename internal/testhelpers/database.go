@@ -86,6 +86,9 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
 	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
 
+	// Create context for container operations
+	ctx := context.Background()
+
 	// Create PostgreSQL container with enhanced health checks
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{

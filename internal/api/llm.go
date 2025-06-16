@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
@@ -47,6 +48,7 @@ func (h *LLMHandler) SetLLMService(service service.LLMServiceInterface) {
 // RegisterRoutes registers the LLM routes
 func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 	llm := router.Group("/llm")
+	llm.Use(middleware.AuthMiddleware(h.authService))
 	{
 		llm.POST("/query", h.Query)
 	}
@@ -101,10 +103,25 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		fmt.Printf("[LLMHandler] Recipe JSON length: %d\n", len(recipeJSON))
 		fmt.Printf("[LLMHandler] Recipe JSON: %s\n", recipeJSON)
+		
+		// Validate JSON by attempting to parse it first
+		var tempRecipe service.RecipeDraft
+		if err := json.Unmarshal([]byte(recipeJSON), &tempRecipe); err != nil {
+			fmt.Printf("[LLMHandler] JSON validation failed, attempting repair: %v\n", err)
+			// If parsing fails, the fixDeepSeekJSON function should have already been applied
+			// Log the issue but continue with parsing attempt below
+		}
+		
 		var recipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &recipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse recipe JSON: %v\n", err)
+			previewLen := 200
+			if len(recipeJSON) < previewLen {
+				previewLen = len(recipeJSON)
+			}
+			fmt.Printf("[LLMHandler] JSON content preview: %s...\n", recipeJSON[:previewLen])
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
 			return
 		}

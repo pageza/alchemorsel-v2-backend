@@ -8,9 +8,15 @@ build:
 run:
 	go run ./cmd/api
 
-# Run tests
+# Run tests with required environment variables
 test:
+	DEEPSEEK_API_KEY="$$(cat ../secrets/deepseek_api_key.txt 2>/dev/null || echo 'test-key')" \
+	OPENAI_API_KEY="$$(cat ../secrets/openai_api_key.txt 2>/dev/null || echo 'test-key')" \
 	go test -v ./...
+
+# Run tests without API key requirements (faster for development)
+test-quick:
+	go test -v ./... -short
 
 # Run linter
 lint:
