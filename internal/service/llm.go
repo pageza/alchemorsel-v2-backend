@@ -327,9 +327,9 @@ The cuisine field MUST be one of the listed cuisines above.`,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
 
-	// Create HTTP client with proper timeout
+	// Create HTTP client with longer timeout for complex recipe generation
 	client := &http.Client{
-		Timeout: 60 * time.Second, // 60 second timeout for LLM requests
+		Timeout: 120 * time.Second, // Increased to 120 seconds for complex recipes
 	}
 	
 	resp, err := client.Do(req)
