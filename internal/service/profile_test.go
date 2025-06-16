@@ -20,7 +20,7 @@ import (
 func setupTestDB(t *testing.T) *gorm.DB {
 	ctx := context.Background()
 
-	// Create PostgreSQL container
+	// Create PostgreSQL container with improved configuration
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "pgvector/pgvector:pg16",
@@ -29,11 +29,12 @@ func setupTestDB(t *testing.T) *gorm.DB {
 				"POSTGRES_USER":     "testuser",
 				"POSTGRES_PASSWORD": "testpass",
 				"POSTGRES_DB":       "testdb",
+				"POSTGRES_INITDB_ARGS": "--auth-host=scram-sha-256",
 			},
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
-				wait.ForLog("database system is ready to accept connections"),
-			).WithStartupTimeout(60 * time.Second),
+				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			).WithStartupTimeout(120 * time.Second),
 		},
 		Started: true,
 	})
@@ -51,14 +52,30 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database
-	dsn := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=disable",
-		host, mappedPort.Port())
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
+	// Retry connection with exponential backoff
+	var db *gorm.DB
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		dsn := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=disable",
+			host, mappedPort.Port())
+		
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err == nil {
+			// Test the connection
+			sqlDB, pingErr := db.DB()
+			if pingErr == nil && sqlDB.Ping() == nil {
+				break
+			}
+		}
+		
+		// Wait before retrying
+		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+		
+		if i == maxRetries-1 {
+			t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
+		}
 	}
 
 	// Install pgvector extension
@@ -90,60 +107,98 @@ func setupTestDB(t *testing.T) *gorm.DB {
 func TestGetProfile(t *testing.T) {
 	// Create a test DB instance
 	db := setupTestDB(t)
+	if db == nil {
+		t.Fatal("failed to setup test database")
+	}
+
+	// Ensure database connection is active
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection: %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Fatalf("database connection is not active: %v", err)
+	}
 
 	svc := NewProfileService(db)
 	userID := uuid.New()
 
-	// Create a test user and profile first
-	user := &models.User{
-		ID:           userID,
-		Name:         "Test User",
-		Email:        "test@example.com",
-		PasswordHash: "hashed_password",
-	}
-	if err := db.Create(user).Error; err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
+	// Create a test user and profile first with transaction for atomicity
+	err = db.Transaction(func(tx *gorm.DB) error {
+		user := &models.User{
+			ID:           userID,
+			Name:         "Test User",
+			Email:        "test@example.com",
+			PasswordHash: "hashed_password",
+		}
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
 
-	profile := &models.UserProfile{
-		UserID:   userID,
-		Username: "testuser",
-	}
-	if err := db.Create(profile).Error; err != nil {
-		t.Fatalf("failed to create test profile: %v", err)
+		profile := &models.UserProfile{
+			UserID:   userID,
+			Username: "testuser",
+		}
+		if err := tx.Create(profile).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to create test data: %v", err)
 	}
 
 	// Test getting the profile
 	result, err := svc.GetProfile(context.Background(), userID)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, "testuser", result.Username)
+	if result != nil {
+		assert.Equal(t, "testuser", result.Username)
+	}
 }
 
 func TestUpdateProfile(t *testing.T) {
 	// Create a test DB instance
 	db := setupTestDB(t)
+	if db == nil {
+		t.Fatal("failed to setup test database")
+	}
+
+	// Ensure database connection is active
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection: %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Fatalf("database connection is not active: %v", err)
+	}
 
 	svc := NewProfileService(db)
 	userID := uuid.New()
 
-	// Create a test user and profile first
-	user := &models.User{
-		ID:           userID,
-		Name:         "Test User",
-		Email:        "test@example.com",
-		PasswordHash: "hashed_password",
-	}
-	if err := db.Create(user).Error; err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
+	// Create a test user and profile first with transaction for atomicity
+	err = db.Transaction(func(tx *gorm.DB) error {
+		user := &models.User{
+			ID:           userID,
+			Name:         "Test User",
+			Email:        "test@example.com",
+			PasswordHash: "hashed_password",
+		}
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
 
-	profile := &models.UserProfile{
-		UserID:   userID,
-		Username: "testuser",
-	}
-	if err := db.Create(profile).Error; err != nil {
-		t.Fatalf("failed to create test profile: %v", err)
+		profile := &models.UserProfile{
+			UserID:   userID,
+			Username: "testuser",
+		}
+		if err := tx.Create(profile).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to create test data: %v", err)
 	}
 
 	// Test updating the profile
@@ -155,6 +210,8 @@ func TestUpdateProfile(t *testing.T) {
 	result, err := svc.UpdateProfile(context.Background(), userID, update)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, "updateduser", result.Username)
-	assert.Equal(t, bio, result.Bio)
+	if result != nil {
+		assert.Equal(t, "updateduser", result.Username)
+		assert.Equal(t, bio, result.Bio)
+	}
 }
