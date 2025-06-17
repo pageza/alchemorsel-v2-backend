@@ -37,6 +37,7 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 	
 	// Public routes (no authentication required)
 	recipes.GET("", h.ListRecipes)
+	recipes.GET("/search", h.SearchRecipes)
 	recipes.GET("/:id", h.GetRecipe)
 	
 	// Protected routes (authentication required)
@@ -327,4 +328,71 @@ func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
 func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
 	// TODO: Implement unfavorite functionality
 	c.Status(http.StatusNotImplemented)
+}
+
+// SearchRecipes handles searching recipes with query parameters
+func (h *RecipeHandler) SearchRecipes(c *gin.Context) {
+	query := c.Query("q")
+	category := c.Query("category")
+	sortBy := c.Query("sort")
+	
+	// If no query parameters, return all recipes (same as ListRecipes)
+	if query == "" && category == "" {
+		h.ListRecipes(c)
+		return
+	}
+	
+	var recipes []*models.Recipe
+	var err error
+	
+	// Use search functionality if query is provided
+	if query != "" {
+		recipes, err = h.recipeService.SearchRecipes(c.Request.Context(), query)
+	} else {
+		// If only category filter, use ListRecipes and filter by category
+		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), nil)
+	}
+	
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	
+	// Apply category filter if specified
+	if category != "" && category != "All" {
+		var filteredRecipes []*models.Recipe
+		for _, recipe := range recipes {
+			if recipe.Category == category {
+				filteredRecipes = append(filteredRecipes, recipe)
+			}
+		}
+		recipes = filteredRecipes
+	}
+	
+	// Apply sorting if specified
+	if sortBy != "" {
+		switch sortBy {
+		case "name":
+			// Sort alphabetically by name
+			for i := 0; i < len(recipes); i++ {
+				for j := i + 1; j < len(recipes); j++ {
+					if recipes[i].Name > recipes[j].Name {
+						recipes[i], recipes[j] = recipes[j], recipes[i]
+					}
+				}
+			}
+		case "newest":
+			// Sort by creation date (newest first) - default order from DB should be this
+			for i := 0; i < len(recipes); i++ {
+				for j := i + 1; j < len(recipes); j++ {
+					if recipes[i].CreatedAt.Before(recipes[j].CreatedAt) {
+						recipes[i], recipes[j] = recipes[j], recipes[i]
+					}
+				}
+			}
+		}
+		// Note: "popular" and "rating" would need additional fields in the Recipe model
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"recipes": recipes})
 }
