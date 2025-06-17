@@ -2,9 +2,9 @@ name: Backend CI
 # To Trigger changes for CI
 on:
   push:
-    branches: [ master, codex-1 ]
+    branches: [ master, codex-1, 'feature/**' ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, codex-1 ]
   workflow_dispatch:
 
 permissions:
