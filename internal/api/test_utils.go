@@ -208,8 +208,9 @@ func SetupTestRouter(t *testing.T) *gin.Engine {
 	testDB := SetupTestDB(t)
 
 	// Create handlers
-	authHandler := NewAuthHandler(testDB.AuthService, testDB.DB)
-	recipeHandler := NewRecipeHandler(service.NewRecipeService(testDB.DB, nil), testDB.AuthService, nil, nil)
+	emailService := service.NewEmailService()
+	authHandler := NewAuthHandler(testDB.AuthService, emailService, testDB.DB)
+	recipeHandler := NewRecipeHandler(service.NewRecipeService(testDB.DB, nil), testDB.AuthService, nil, nil, testDB.DB)
 	// Use a mock LLM handler instead of the real one
 	llmHandler := NewMockLLMHandler()
 

@@ -39,7 +39,7 @@ func main() {
 	profileService := service.NewProfileService(db)
 
 	// Create server
-	srv := server.NewServer(db, authService, profileService)
+	srv := server.NewServer(db, authService, profileService, cfg)
 
 	// Start server in a goroutine
 	go func() {

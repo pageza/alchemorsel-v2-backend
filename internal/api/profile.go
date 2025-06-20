@@ -44,6 +44,14 @@ func (h *ProfileHandler) RegisterRoutes(router *gin.RouterGroup) {
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
+	// Get user with email verification status
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+
 	profile, err := h.profileService.GetProfile(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -56,8 +64,24 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
+	// Combine user and profile data
+	profileData := gin.H{
+		"id":                  user.ID,
+		"name":                user.Name,
+		"email":               user.Email,
+		"email_verified":      user.EmailVerified,
+		"email_verified_at":   user.EmailVerifiedAt,
+		"username":            profile.Username,
+		"bio":                 profile.Bio,
+		"profile_picture_url": profile.ProfilePictureURL,
+		"privacy_level":       profile.PrivacyLevel,
+		"created_at":          user.CreatedAt,
+		"updated_at":          user.UpdatedAt,
+	}
+
+
 	c.JSON(http.StatusOK, gin.H{
-		"profile": profile,
+		"profile": profileData,
 		"recipes": recipes,
 	})
 }

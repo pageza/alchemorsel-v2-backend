@@ -8,8 +8,9 @@ import (
 // TokenClaims represents the claims in a JWT token
 type TokenClaims struct {
 	jwt.RegisteredClaims
-	UserID   uuid.UUID `json:"user_id"`
-	Username string    `json:"username"`
+	UserID          uuid.UUID `json:"user_id"`
+	Username        string    `json:"username"`
+	IsEmailVerified bool      `json:"is_email_verified"`
 }
 
 // GetAudience implements jwt.Claims

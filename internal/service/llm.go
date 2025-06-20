@@ -239,8 +239,41 @@ func (s *LLMService) DeleteDraft(ctx context.Context, id string) error {
 	return nil
 }
 
-// GenerateRecipe generates a recipe using the DeepSeek API
+// GenerateRecipe generates a recipe with retry logic for robustness
 func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
+	const maxRetries = 3
+	
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		fmt.Printf("[LLMHandler] Generation attempt %d/%d\n", attempt, maxRetries)
+		
+		content, err := s.generateRecipeAttempt(query, dietaryPrefs, allergens, originalRecipe)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Attempt %d failed: %v\n", attempt, err)
+			if attempt == maxRetries {
+				return "", fmt.Errorf("failed to generate recipe after %d attempts: %w", maxRetries, err)
+			}
+			continue
+		}
+		
+		// Validate JSON by attempting to parse it
+		var tempRecipe RecipeDraft
+		if err := json.Unmarshal([]byte(content), &tempRecipe); err != nil {
+			fmt.Printf("[LLMHandler] Attempt %d returned invalid JSON: %v\n", attempt, err)
+			if attempt == maxRetries {
+				return "", fmt.Errorf("failed to generate valid JSON after %d attempts: %w", maxRetries, err)
+			}
+			continue
+		}
+		
+		fmt.Printf("[LLMHandler] Successfully generated recipe on attempt %d\n", attempt)
+		return content, nil
+	}
+	
+	return "", fmt.Errorf("failed to generate recipe after %d attempts", maxRetries)
+}
+
+// generateRecipeAttempt performs a single attempt at recipe generation
+func (s *LLMService) generateRecipeAttempt(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
 	var prompt string
 	if originalRecipe != nil {
 		// For modifications, include the original recipe in the prompt

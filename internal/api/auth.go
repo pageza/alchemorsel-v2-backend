@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,15 +14,17 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	authService service.IAuthService
-	db          *gorm.DB
+	authService  service.IAuthService
+	emailService service.IEmailService
+	db           *gorm.DB
 }
 
 // NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(authService service.IAuthService, db *gorm.DB) *AuthHandler {
+func NewAuthHandler(authService service.IAuthService, emailService service.IEmailService, db *gorm.DB) *AuthHandler {
 	return &AuthHandler{
-		authService: authService,
-		db:          db,
+		authService:  authService,
+		emailService: emailService,
+		db:           db,
 	}
 }
 
@@ -31,6 +34,8 @@ func (h *AuthHandler) RegisterRoutes(router *gin.RouterGroup) {
 	{
 		auth.POST("/register", h.Register)
 		auth.POST("/login", h.Login)
+		auth.POST("/verify-email", h.VerifyEmail)
+		auth.POST("/resend-verification", h.ResendVerification)
 		auth.GET("/profile", h.GetProfile)
 		auth.PUT("/profile", h.UpdateProfile)
 	}
@@ -49,15 +54,31 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.Register(c.Request.Context(), req.Email, req.Password, nil)
+	// Create context with username
+	ctx := context.WithValue(c.Request.Context(), "username", req.Username)
+	user, err := h.authService.Register(ctx, req.Email, req.Password, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Generate verification token and send verification email
+	verificationToken, err := h.authService.GenerateVerificationToken(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate verification token"})
+		return
+	}
+
+	// Send verification email
+	if err := h.emailService.SendVerificationEmail(user, verificationToken); err != nil {
+		// Log error but don't fail registration - user can request resend later
+		c.Header("X-Warning", "User created but verification email failed to send")
+	}
+
 	claims := &types.TokenClaims{
-		UserID:   user.ID,
-		Username: req.Username,
+		UserID:          user.ID,
+		Username:        req.Username,
+		IsEmailVerified: user.EmailVerified,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(user.CreatedAt.Add(3 * 3600 * 1e9)), // 3 hours for improved security
 			IssuedAt:  jwt.NewNumericDate(user.CreatedAt),
@@ -72,6 +93,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"user_id": user.ID,
 		"token":   token,
+		"message": "Registration successful. Please check your email to verify your account.",
 	})
 }
 
@@ -94,8 +116,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	claims := &types.TokenClaims{
-		UserID:   user.ID,
-		Username: profile.Username,
+		UserID:          user.ID,
+		Username:        profile.Username,
+		IsEmailVerified: user.EmailVerified,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(user.CreatedAt.Add(24 * 3600 * 1e9)),
 			IssuedAt:  jwt.NewNumericDate(user.CreatedAt),
@@ -184,5 +207,70 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		"bio":                 profile.Bio,
 		"profile_picture_url": profile.ProfilePictureURL,
 		"privacy_level":       profile.PrivacyLevel,
+	})
+}
+
+// VerifyEmail handles email verification
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	var req struct {
+		Token string `json:"token" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	user, err := h.authService.ValidateVerificationToken(c.Request.Context(), req.Token)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Send welcome email after successful verification
+	if err := h.emailService.SendWelcomeEmail(user); err != nil {
+		// Log error but don't fail the verification
+		// User is still verified even if welcome email fails
+		c.Header("X-Warning", "Email verified but welcome email failed to send")
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Email verified successfully",
+		"user_id":      user.ID,
+		"email":        user.Email,
+		"verified_at":  user.EmailVerifiedAt,
+	})
+}
+
+// ResendVerification handles resending verification email
+func (h *AuthHandler) ResendVerification(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err := h.authService.ResendVerificationEmail(c.Request.Context(), req.Email, h.emailService)
+	if err != nil {
+		// Don't reveal whether user exists or not for security
+		if err.Error() == "user not found" {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "If the email exists in our system, a verification email has been sent",
+			})
+			return
+		}
+		if err.Error() == "email already verified" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Email is already verified"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send verification email"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Verification email sent successfully",
 	})
 }

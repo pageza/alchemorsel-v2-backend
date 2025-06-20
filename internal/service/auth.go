@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 	"golang.org/x/crypto/bcrypt"
@@ -67,7 +70,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string, pref
 
 	// Create user
 	user := models.User{
-		Name:         email,
+		Name:         username,
 		Email:        email,
 		PasswordHash: string(hashedPassword),
 	}
@@ -168,4 +171,126 @@ func (s *AuthService) GenerateToken(claims *types.TokenClaims) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.secretKey))
+}
+
+// GenerateVerificationToken generates a new verification token for a user
+func (s *AuthService) GenerateVerificationToken(ctx context.Context, userID uuid.UUID) (string, error) {
+	// Generate random token
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate random token: %w", err)
+	}
+	token := hex.EncodeToString(bytes)
+	
+	// Set expiration to 24 hours from now
+	expiresAt := time.Now().Add(24 * time.Hour)
+	
+	// Update user with new verification token
+	result := s.db.Model(&models.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"verification_token":            token,
+			"verification_token_expires_at": expiresAt,
+		})
+	
+	if result.Error != nil {
+		return "", fmt.Errorf("failed to update verification token: %w", result.Error)
+	}
+	
+	if result.RowsAffected == 0 {
+		return "", errors.New("user not found")
+	}
+	
+	return token, nil
+}
+
+// ValidateVerificationToken validates a verification token and marks email as verified
+func (s *AuthService) ValidateVerificationToken(ctx context.Context, token string) (*models.User, error) {
+	var user models.User
+	now := time.Now()
+	
+	// Find user with valid token
+	err := s.db.Where("verification_token = ? AND verification_token_expires_at > ?", token, now).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("invalid or expired verification token")
+		}
+		return nil, fmt.Errorf("failed to find user: %w", err)
+	}
+	
+	// Update user to mark email as verified and clear token
+	verifiedAt := time.Now()
+	result := s.db.Model(&user).Updates(map[string]interface{}{
+		"email_verified":                true,
+		"email_verified_at":             verifiedAt,
+		"verification_token":            nil,
+		"verification_token_expires_at": nil,
+	})
+	
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to update user verification status: %w", result.Error)
+	}
+	
+	// Update the returned user object
+	user.EmailVerified = true
+	user.EmailVerifiedAt = &verifiedAt
+	user.VerificationToken = nil
+	user.VerificationTokenExpiresAt = nil
+	
+	return &user, nil
+}
+
+// ResendVerificationEmail generates a new token and sends verification email
+func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string, emailService IEmailService) error {
+	var user models.User
+	err := s.db.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("user not found")
+		}
+		return fmt.Errorf("failed to find user: %w", err)
+	}
+	
+	// Check if already verified
+	if user.EmailVerified {
+		return errors.New("email already verified")
+	}
+	
+	// Generate new verification token
+	token, err := s.GenerateVerificationToken(ctx, user.ID)
+	if err != nil {
+		return fmt.Errorf("failed to generate verification token: %w", err)
+	}
+	
+	// Send verification email
+	if err := emailService.SendVerificationEmail(&user, token); err != nil {
+		return fmt.Errorf("failed to send verification email: %w", err)
+	}
+	
+	return nil
+}
+
+// GetUserByEmail retrieves a user by email address
+func (s *AuthService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	var user models.User
+	err := s.db.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("user not found")
+		}
+		return nil, fmt.Errorf("failed to find user: %w", err)
+	}
+	return &user, nil
+}
+
+func (s *AuthService) GetUserByID(ctx context.Context, userID uuid.UUID) (*models.User, error) {
+	var user models.User
+	err := s.db.Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("user not found")
+		}
+		return nil, fmt.Errorf("failed to find user: %w", err)
+	}
+	return &user, nil
 }

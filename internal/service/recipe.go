@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/pageza/alchemorsel-v2/backend/internal/model"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"gorm.io/gorm"
 )
@@ -117,6 +119,60 @@ func (s *RecipeService) SearchRecipes(ctx context.Context, query string) ([]*mod
 	}
 
 	if err := dbQuery.Find(&recipes).Error; err != nil {
+		return nil, err
+	}
+
+	// Convert to []*models.Recipe
+	result := make([]*models.Recipe, len(recipes))
+	for i := range recipes {
+		result[i] = &recipes[i]
+	}
+	return result, nil
+}
+
+// FavoriteRecipe adds a recipe to user's favorites
+func (s *RecipeService) FavoriteRecipe(ctx context.Context, userID, recipeID uuid.UUID) error {
+	// Check if already favorited
+	var existing model.RecipeFavorite
+	err := s.db.Where("user_id = ? AND recipe_id = ?", userID, recipeID).First(&existing).Error
+	if err == nil {
+		return errors.New("recipe already favorited")
+	}
+	if err != gorm.ErrRecordNotFound {
+		return err
+	}
+
+	// Create new favorite
+	favorite := model.RecipeFavorite{
+		UserID:   userID,
+		RecipeID: recipeID,
+	}
+
+	return s.db.Create(&favorite).Error
+}
+
+// UnfavoriteRecipe removes a recipe from user's favorites
+func (s *RecipeService) UnfavoriteRecipe(ctx context.Context, userID, recipeID uuid.UUID) error {
+	result := s.db.Where("user_id = ? AND recipe_id = ?", userID, recipeID).Delete(&model.RecipeFavorite{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// GetFavoriteRecipes retrieves all favorite recipes for a user
+func (s *RecipeService) GetFavoriteRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error) {
+	var recipes []models.Recipe
+	
+	err := s.db.Table("recipes").
+		Joins("JOIN recipe_favorites ON recipes.id = recipe_favorites.recipe_id").
+		Where("recipe_favorites.user_id = ?", userID).
+		Find(&recipes).Error
+	
+	if err != nil {
 		return nil, err
 	}
 
