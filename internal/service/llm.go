@@ -341,8 +341,8 @@ The cuisine field MUST be one of the listed cuisines above.`,
 			"type": "json_object",
 		},
 		MaxTokens:        4096, // Much higher limit to prevent cutoff
-		Temperature:      0.7,  // Standard temperature for balanced creativity
-		TopP:             0.9,  // Higher top_p for more diverse outputs
+		Temperature:      0.2,  // Low temperature for reliable JSON formatting
+		TopP:             0.8,  // Focused sampling for structured output
 		FrequencyPenalty: 0.5,  // Penalize repeated tokens
 		PresencePenalty:  0.5,  // Encourage new topics
 	}
@@ -604,8 +604,8 @@ Please provide each recipe as a separate JSON object in an array.`,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
-		Temperature:      0.9, // Higher temperature for more creativity
-		TopP:             0.9, // Higher top_p for more diverse outputs
+		Temperature:      0.2, // Low temperature for reliable JSON formatting
+		TopP:             0.8, // Focused sampling for structured output
 		FrequencyPenalty: 0.5, // Penalize repeated tokens
 		PresencePenalty:  0.5, // Encourage new topics
 	}
