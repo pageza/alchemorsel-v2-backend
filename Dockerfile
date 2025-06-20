@@ -25,12 +25,6 @@ WORKDIR /app
 # Install CA certificates and Go for seeding and other tasks
 RUN apt-get update && apt-get install -y ca-certificates golang && update-ca-certificates
 
-# Copy go.mod and go.sum files
-COPY --from=builder /app/go.mod /app/go.sum ./
-
-# Download dependencies
-RUN go mod download
-
 # Copy the binaries and other necessary files
 COPY --from=builder /app/main .
 COPY --from=builder /app/migrate .

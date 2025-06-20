@@ -39,7 +39,6 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 		}
 	})
 
-
 	// Set CI environment and required secrets
 	os.Setenv("CI", "true")
 	os.Setenv("SERVER_PORT", "8080")
@@ -86,6 +85,9 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 	t.Logf("[DEBUG] DB_PASSWORD: %s", cfg.DBPassword)
 	t.Logf("[DEBUG] DB_NAME: %s", cfg.DBName)
 	t.Logf("[DEBUG] DB_SSL_MODE: %s", cfg.DBSSLMode)
+
+	// Create context for container operations
+	ctx := context.Background()
 
 	// Create PostgreSQL container with enhanced health checks
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{

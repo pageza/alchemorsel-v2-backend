@@ -1,12 +1,11 @@
 name: Backend CI
 # To Trigger changes for CI
 on:
-  workflow_dispatch:  # Only runs when manually triggered
-  # Commenting out automatic triggers
-  # push:
-  #   branches: [ pristine-working-point ]
-  # pull_request:
-  #   branches: [ pristine-working-point ]
+  push:
+    branches: [ master, codex-1 ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -158,8 +157,9 @@ jobs:
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
+        continue-on-error: true
         with:
           file: ./coverage.txt
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 

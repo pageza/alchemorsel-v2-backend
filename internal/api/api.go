@@ -11,13 +11,14 @@ func SetupAPI(router *gin.Engine, db *gorm.DB, jwtSecret string) {
 	{
 		// Initialize services
 		authService := service.NewAuthService(db, jwtSecret)
+		emailService := service.NewEmailService()
 		profileService := service.NewProfileService(db)
 		recipeService := service.NewRecipeService(db, nil)
 
 		// Initialize handlers
-		authHandler := NewAuthHandler(authService, db)
+		authHandler := NewAuthHandler(authService, emailService, db)
 		profileHandler := NewProfileHandler(profileService, authService)
-		recipeHandler := NewRecipeHandler(recipeService, authService, nil, nil)
+		recipeHandler := NewRecipeHandler(recipeService, authService, nil, nil, db)
 
 		// Register routes
 		authHandler.RegisterRoutes(v1)

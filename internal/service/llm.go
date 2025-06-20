@@ -102,9 +102,14 @@ type Message struct {
 
 // Request represents a request to the DeepSeek API
 type Request struct {
-	Model          string            `json:"model"`
-	Messages       []Message         `json:"messages"`
-	ResponseFormat map[string]string `json:"response_format"`
+	Model            string            `json:"model"`
+	Messages         []Message         `json:"messages"`
+	ResponseFormat   map[string]string `json:"response_format"`
+	MaxTokens        int               `json:"max_tokens,omitempty"`
+	Temperature      float64           `json:"temperature"`
+	TopP             float64           `json:"top_p"`
+	FrequencyPenalty float64           `json:"frequency_penalty"`
+	PresencePenalty  float64           `json:"presence_penalty"`
 }
 
 // Macros represents nutritional macros information
@@ -234,8 +239,41 @@ func (s *LLMService) DeleteDraft(ctx context.Context, id string) error {
 	return nil
 }
 
-// GenerateRecipe generates a recipe using the DeepSeek API
+// GenerateRecipe generates a recipe with retry logic for robustness
 func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
+	const maxRetries = 3
+	
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		fmt.Printf("[LLMHandler] Generation attempt %d/%d\n", attempt, maxRetries)
+		
+		content, err := s.generateRecipeAttempt(query, dietaryPrefs, allergens, originalRecipe)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Attempt %d failed: %v\n", attempt, err)
+			if attempt == maxRetries {
+				return "", fmt.Errorf("failed to generate recipe after %d attempts: %w", maxRetries, err)
+			}
+			continue
+		}
+		
+		// Validate JSON by attempting to parse it
+		var tempRecipe RecipeDraft
+		if err := json.Unmarshal([]byte(content), &tempRecipe); err != nil {
+			fmt.Printf("[LLMHandler] Attempt %d returned invalid JSON: %v\n", attempt, err)
+			if attempt == maxRetries {
+				return "", fmt.Errorf("failed to generate valid JSON after %d attempts: %w", maxRetries, err)
+			}
+			continue
+		}
+		
+		fmt.Printf("[LLMHandler] Successfully generated recipe on attempt %d\n", attempt)
+		return content, nil
+	}
+	
+	return "", fmt.Errorf("failed to generate recipe after %d attempts", maxRetries)
+}
+
+// generateRecipeAttempt performs a single attempt at recipe generation
+func (s *LLMService) generateRecipeAttempt(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
 	var prompt string
 	if originalRecipe != nil {
 		// For modifications, include the original recipe in the prompt
@@ -302,6 +340,11 @@ The cuisine field MUST be one of the listed cuisines above.`,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
+		MaxTokens:        4096, // Much higher limit to prevent cutoff
+		Temperature:      0.2,  // Low temperature for reliable JSON formatting
+		TopP:             0.8,  // Focused sampling for structured output
+		FrequencyPenalty: 0.5,  // Penalize repeated tokens
+		PresencePenalty:  0.5,  // Encourage new topics
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -317,18 +360,38 @@ The cuisine field MUST be one of the listed cuisines above.`,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
 
-	resp, err := http.DefaultClient.Do(req)
+	// Create HTTP client with longer timeout for complex recipe generation
+	client := &http.Client{
+		Timeout: 120 * time.Second, // Increased to 120 seconds for complex recipes
+	}
+	
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API request failed with status %d", resp.StatusCode)
+	}
+
+	// Read response with detailed logging
+	fmt.Printf("[LLMHandler] Response status: %d\n", resp.StatusCode)
+	fmt.Printf("[LLMHandler] Response headers: %v\n", resp.Header)
+	
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	fmt.Printf("[LLMHandler] Raw JSON response: %s\n", string(body))
+	fmt.Printf("[LLMHandler] Raw response length: %d bytes\n", len(body))
+	fmt.Printf("[LLMHandler] RAW DEEPSEEK RESPONSE: %s\n", string(body))
+	
+	// Check if response was potentially truncated
+	if len(body) > 0 && !strings.HasSuffix(string(body), "}") {
+		fmt.Printf("[LLMHandler] WARNING: Response appears truncated (doesn't end with })\n")
+	}
 
 	var result struct {
 		Choices []struct {
@@ -346,7 +409,78 @@ The cuisine field MUST be one of the listed cuisines above.`,
 		return "", fmt.Errorf("no response from API")
 	}
 
-	return result.Choices[0].Message.Content, nil
+	// Apply JSON fixes before returning
+	content := result.Choices[0].Message.Content
+	fmt.Printf("[LLMHandler] EXTRACTED CONTENT BEFORE FIXES: %s\n", content)
+	content = fixDeepSeekJSON(content)
+	fmt.Printf("[LLMHandler] EXTRACTED CONTENT AFTER FIXES: %s\n", content)
+	
+	return content, nil
+}
+
+// fixDeepSeekJSON fixes common JSON formatting issues from DeepSeek API
+func fixDeepSeekJSON(content string) string {
+	fmt.Printf("[LLMHandler] Fixing DeepSeek JSON formatting issues...\n")
+	
+	// 1. Fix incomplete JSON (missing closing brace)
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasSuffix(trimmed, "}") {
+		fmt.Printf("[LLMHandler] Adding missing closing brace\n")
+		// Remove trailing comma if present
+		if strings.HasSuffix(trimmed, ",") {
+			trimmed = strings.TrimSuffix(trimmed, ",")
+		}
+		// Handle incomplete field values by closing them properly
+		if strings.HasSuffix(trimmed, `"difficulty": "Easy"`) ||
+		   strings.HasSuffix(trimmed, `"difficulty": "Medium"`) ||
+		   strings.HasSuffix(trimmed, `"difficulty": "Hard"`) {
+			content = trimmed + "\n}"
+		} else if strings.Contains(trimmed, `"difficulty":`) {
+			// If difficulty field is incomplete, fix it
+			lastCommaIndex := strings.LastIndex(trimmed, ",")
+			if lastCommaIndex > 0 {
+				content = trimmed[:lastCommaIndex] + "\n}"
+			} else {
+				content = trimmed + "\n}"
+			}
+		} else {
+			content = trimmed + "\n}"
+		}
+	}
+	
+	// 2. Fix single quotes to double quotes for JSON compliance
+	if strings.Contains(content, "'") {
+		fmt.Printf("[LLMHandler] Converting single quotes to double quotes\n")
+		content = strings.ReplaceAll(content, "'", "\"")
+	}
+	
+	// 3. Fix double double quotes (if any)
+	if strings.Contains(content, `""`) {
+		fmt.Printf("[LLMHandler] Fixing double quotes\n")
+		content = strings.ReplaceAll(content, `""`, `"`)
+	}
+	
+	// 4. Remove empty string entries in arrays
+	if strings.Contains(content, `""`) || strings.Contains(content, `"",`) {
+		fmt.Printf("[LLMHandler] Cleaning up empty entries\n")
+		content = strings.ReplaceAll(content, `,\n        ""`, "")
+		content = strings.ReplaceAll(content, `""`, "")
+	}
+	
+	// 5. Fix incomplete field values with missing quotes
+	if strings.Contains(content, `"difficulty": Easy`) {
+		fmt.Printf("[LLMHandler] Fixing missing quotes around difficulty value\n")
+		content = strings.ReplaceAll(content, `"difficulty": Easy`, `"difficulty": "Easy"`)
+	}
+	if strings.Contains(content, `"difficulty": Medium`) {
+		content = strings.ReplaceAll(content, `"difficulty": Medium`, `"difficulty": "Medium"`)
+	}
+	if strings.Contains(content, `"difficulty": Hard`) {
+		content = strings.ReplaceAll(content, `"difficulty": Hard`, `"difficulty": "Hard"`)
+	}
+	
+	fmt.Printf("[LLMHandler] JSON formatting fixes applied\n")
+	return content
 }
 
 // CalculateMacros estimates the macronutrients for a set of ingredients
@@ -470,6 +604,10 @@ Please provide each recipe as a separate JSON object in an array.`,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
+		Temperature:      0.2, // Low temperature for reliable JSON formatting
+		TopP:             0.8, // Focused sampling for structured output
+		FrequencyPenalty: 0.5, // Penalize repeated tokens
+		PresencePenalty:  0.5, // Encourage new topics
 	}
 
 	// Marshal the request

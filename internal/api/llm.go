@@ -10,18 +10,21 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
 // LLMHandler handles LLM-related requests
 type LLMHandler struct {
-	db          *gorm.DB
-	llmService  service.LLMServiceInterface
-	authService *service.AuthService
+	db               *gorm.DB
+	llmService       service.LLMServiceInterface
+	authService      *service.AuthService
+	recipeService    service.IRecipeService
+	creationLimiter  *middleware.RateLimiter
 }
 
 // NewLLMHandler creates a new LLM handler
-func NewLLMHandler(db *gorm.DB, authService *service.AuthService, llmService service.LLMServiceInterface) *LLMHandler {
+func NewLLMHandler(db *gorm.DB, authService *service.AuthService, llmService service.LLMServiceInterface, recipeService service.IRecipeService) *LLMHandler {
 	var svc service.LLMServiceInterface
 	if llmService != nil {
 		svc = llmService
@@ -33,9 +36,31 @@ func NewLLMHandler(db *gorm.DB, authService *service.AuthService, llmService ser
 		}
 	}
 	return &LLMHandler{
-		db:          db,
-		llmService:  svc,
-		authService: authService,
+		db:            db,
+		llmService:    svc,
+		authService:   authService,
+		recipeService: recipeService,
+	}
+}
+
+// NewLLMHandlerWithRateLimit creates a new LLM handler with rate limiting
+func NewLLMHandlerWithRateLimit(db *gorm.DB, authService *service.AuthService, llmService service.LLMServiceInterface, recipeService service.IRecipeService, creationLimiter *middleware.RateLimiter) *LLMHandler {
+	var svc service.LLMServiceInterface
+	if llmService != nil {
+		svc = llmService
+	} else {
+		var err error
+		svc, err = service.NewLLMService()
+		if err != nil {
+			panic(err)
+		}
+	}
+	return &LLMHandler{
+		db:              db,
+		llmService:      svc,
+		authService:     authService,
+		recipeService:   recipeService,
+		creationLimiter: creationLimiter,
 	}
 }
 
@@ -47,16 +72,22 @@ func (h *LLMHandler) SetLLMService(service service.LLMServiceInterface) {
 // RegisterRoutes registers the LLM routes
 func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 	llm := router.Group("/llm")
+	llm.Use(middleware.AuthMiddleware(h.authService))
 	{
-		llm.POST("/query", h.Query)
+		// Recipe generation requires email verification
+		llm.POST("/query", middleware.RequireEmailVerification(h.db), h.Query)
+		// Draft operations don't require verification (user can view their drafts before verifying)
+		llm.GET("/drafts/:id", h.GetDraft)
+		llm.DELETE("/drafts/:id", h.DeleteDraft)
 	}
 }
 
 // QueryRequest represents a request to query the LLM
 type QueryRequest struct {
-	Query   string `json:"query" binding:"required"`
-	Intent  string `json:"intent" binding:"required"`
-	DraftID string `json:"draft_id,omitempty"`
+	Query    string `json:"query" binding:"required"`
+	Intent   string `json:"intent" binding:"required"`
+	DraftID  string `json:"draft_id,omitempty"`
+	RecipeID string `json:"recipe_id,omitempty"`
 }
 
 // Query handles recipe generation and modification requests
@@ -93,27 +124,165 @@ func (h *LLMHandler) Query(c *gin.Context) {
 	fmt.Printf("[LLMHandler] user_id string: %s\n", userID.String())
 
 	switch req.Intent {
-	case "generate":
-		fmt.Println("[LLMHandler] Intent: generate")
-		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, nil)
+	case "fork":
+		fmt.Println("[LLMHandler] Intent: fork")
+		if req.RecipeID == "" {
+			fmt.Println("[LLMHandler] recipe_id is required for forking. Responding 400.")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "recipe_id is required for forking"})
+			return
+		}
+		
+		// Check rate limiting before attempting fork (without incrementing)
+		if h.creationLimiter != nil {
+			allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
+			if err != nil {
+				fmt.Printf("[LLMHandler] Rate limit check failed for user %s: %v\n", userID.String(), err)
+				// Continue without rate limiting on error
+			} else if !allowed {
+				fmt.Printf("[LLMHandler] Rate limit exceeded for user %s\n", userID.String())
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":                "rate limit exceeded",
+					"rate_limit_remaining": remaining,
+					"rate_limit_reset":     resetTime.Unix(),
+				})
+				return
+			}
+		}
+		
+		// Get the original recipe from database
+		recipeUUID, err := uuid.Parse(req.RecipeID)
 		if err != nil {
-			fmt.Printf("[LLMHandler] Error generating recipe: %v\n", err)
+			fmt.Printf("[LLMHandler] Invalid recipe_id format: %v\n", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe_id format"})
+			return
+		}
+		
+		originalRecipe, err := h.recipeService.GetRecipe(c.Request.Context(), recipeUUID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error getting original recipe: %v\n", err)
+			c.JSON(http.StatusNotFound, gin.H{"error": "original recipe not found"})
+			return
+		}
+		
+		// Convert the original recipe to a draft format for modification
+		originalDraft := &service.RecipeDraft{
+			Name:         originalRecipe.Name,
+			Description:  originalRecipe.Description,
+			Category:     originalRecipe.Category,
+			Ingredients:  []string(originalRecipe.Ingredients),
+			Instructions: []string(originalRecipe.Instructions),
+			PrepTime:     "", // These fields may not be in the same format
+			CookTime:     "",
+			Servings:     service.ServingsType{Value: "4"}, // Default servings
+			Difficulty:   "Medium", // Default difficulty since Recipe model doesn't have this field
+			Calories:     originalRecipe.Calories,
+			Protein:      originalRecipe.Protein,
+			Carbs:        originalRecipe.Carbs,
+			Fat:          originalRecipe.Fat,
+			UserID:       userID.String(),
+		}
+		
+		// Generate modified recipe using LLM
+		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, originalDraft)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error generating forked recipe: %v\n", err)
+			// Don't increment rate limit counter on generation failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		fmt.Printf("[LLMHandler] Forked Recipe JSON: %s\n", recipeJSON)
+		
+		var newRecipe service.RecipeDraft
+		if err := json.Unmarshal([]byte(recipeJSON), &newRecipe); err != nil {
+			fmt.Printf("[LLMHandler] Failed to parse forked recipe JSON: %v\n", err)
+			// Don't increment rate limit counter on parsing failure
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
+			return
+		}
+		
+		newRecipe.UserID = userID.String()
+		if err := h.llmService.SaveDraft(c.Request.Context(), &newRecipe); err != nil {
+			fmt.Printf("[LLMHandler] Error saving forked draft: %v\n", err)
+			// Don't increment rate limit counter on save failure
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		
+		// Only increment rate limit counter on successful fork generation and save
+		if h.creationLimiter != nil {
+			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
+				fmt.Printf("[LLMHandler] Failed to increment rate limit for user %s: %v\n", userID.String(), err)
+			} else {
+				fmt.Printf("[LLMHandler] Rate limit incremented for successful fork by user %s\n", userID.String())
+			}
+		}
+		
+		fmt.Printf("[LLMHandler] Successfully forked recipe. New Draft ID: %s\n", newRecipe.ID)
+		c.JSON(http.StatusOK, gin.H{
+			"recipe":   newRecipe,
+			"draft_id": newRecipe.ID,
+		})
+		fmt.Println("[LLMHandler] Responded 200 OK with forked recipe and draft_id.")
+		
+	case "generate":
+		fmt.Println("[LLMHandler] Intent: generate")
+		
+		// Check rate limiting before attempting generation (without incrementing)
+		if h.creationLimiter != nil {
+			allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
+			if err != nil {
+				fmt.Printf("[LLMHandler] Rate limit check failed for user %s: %v\n", userID.String(), err)
+				// Continue without rate limiting on error
+			} else if !allowed {
+				fmt.Printf("[LLMHandler] Rate limit exceeded for user %s\n", userID.String())
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":                "rate limit exceeded",
+					"rate_limit_remaining": remaining,
+					"rate_limit_reset":     resetTime.Unix(),
+				})
+				return
+			}
+		}
+		
+		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, nil)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error generating recipe: %v\n", err)
+			// Don't increment rate limit counter on generation failure
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		fmt.Printf("[LLMHandler] Recipe JSON length: %d\n", len(recipeJSON))
 		fmt.Printf("[LLMHandler] Recipe JSON: %s\n", recipeJSON)
+		
 		var recipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &recipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse recipe JSON: %v\n", err)
+			previewLen := 200
+			if len(recipeJSON) < previewLen {
+				previewLen = len(recipeJSON)
+			}
+			fmt.Printf("[LLMHandler] JSON content preview: %s...\n", recipeJSON[:previewLen])
+			// Don't increment rate limit counter on parsing failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
 			return
 		}
 		recipe.UserID = userID.String()
 		if err := h.llmService.SaveDraft(c.Request.Context(), &recipe); err != nil {
 			fmt.Printf("[LLMHandler] Error saving draft: %v\n", err)
+			// Don't increment rate limit counter on save failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Only increment rate limit counter on successful generation and save
+		if h.creationLimiter != nil {
+			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
+				fmt.Printf("[LLMHandler] Failed to increment rate limit for user %s: %v\n", userID.String(), err)
+			} else {
+				fmt.Printf("[LLMHandler] Rate limit incremented for successful generation by user %s\n", userID.String())
+			}
+		}
+		
 		fmt.Printf("[LLMHandler] Successfully generated and saved draft. Recipe ID: %s\n", recipe.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   recipe,
@@ -127,6 +296,24 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required for modifications"})
 			return
 		}
+		
+		// Check rate limiting before attempting modification (without incrementing)
+		if h.creationLimiter != nil {
+			allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
+			if err != nil {
+				fmt.Printf("[LLMHandler] Rate limit check failed for user %s: %v\n", userID.String(), err)
+				// Continue without rate limiting on error
+			} else if !allowed {
+				fmt.Printf("[LLMHandler] Rate limit exceeded for user %s\n", userID.String())
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":                "rate limit exceeded",
+					"rate_limit_remaining": remaining,
+					"rate_limit_reset":     resetTime.Unix(),
+				})
+				return
+			}
+		}
+		
 		draft, err := h.llmService.GetDraft(c.Request.Context(), req.DraftID)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error getting draft: %v\n", err)
@@ -141,6 +328,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, draft)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating modified recipe: %v\n", err)
+			// Don't increment rate limit counter on generation failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -148,6 +336,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		var updatedRecipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &updatedRecipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse modified recipe JSON: %v\n", err)
+			// Don't increment rate limit counter on parsing failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
 			return
 		}
@@ -165,9 +354,20 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		draft.Fat = updatedRecipe.Fat
 		if err := h.llmService.UpdateDraft(c.Request.Context(), draft); err != nil {
 			fmt.Printf("[LLMHandler] Error updating draft: %v\n", err)
+			// Don't increment rate limit counter on save failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Only increment rate limit counter on successful modification and save
+		if h.creationLimiter != nil {
+			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
+				fmt.Printf("[LLMHandler] Failed to increment rate limit for user %s: %v\n", userID.String(), err)
+			} else {
+				fmt.Printf("[LLMHandler] Rate limit incremented for successful modification by user %s\n", userID.String())
+			}
+		}
+		
 		fmt.Printf("[LLMHandler] Successfully modified and updated draft. Draft ID: %s\n", draft.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   draft,
@@ -189,8 +389,13 @@ func (h *LLMHandler) GetDraft(c *gin.Context) {
 	}
 
 	// Get user ID from context
-	userID := c.GetString("user_id")
-	if userID == "" {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
@@ -202,7 +407,7 @@ func (h *LLMHandler) GetDraft(c *gin.Context) {
 	}
 
 	// Verify ownership
-	if draft.UserID != userID {
+	if draft.UserID != userID.String() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized"})
 		return
 	}
@@ -219,8 +424,13 @@ func (h *LLMHandler) DeleteDraft(c *gin.Context) {
 	}
 
 	// Get user ID from context
-	userID := c.GetString("user_id")
-	if userID == "" {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
@@ -233,7 +443,7 @@ func (h *LLMHandler) DeleteDraft(c *gin.Context) {
 	}
 
 	// Verify ownership
-	if draft.UserID != userID {
+	if draft.UserID != userID.String() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized"})
 		return
 	}

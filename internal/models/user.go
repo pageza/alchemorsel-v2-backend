@@ -8,16 +8,20 @@ import (
 )
 
 type User struct {
-	ID           uuid.UUID           `gorm:"type:uuid;primarykey;default:gen_random_uuid()" json:"id"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt      `gorm:"index" json:"-"`
-	Name         string              `gorm:"not null" json:"name"`
-	Email        string              `gorm:"uniqueIndex;not null" json:"email"`
-	PasswordHash string              `gorm:"not null" json:"-"`
-	Profile      UserProfile         `gorm:"foreignKey:UserID" json:"profile"`
-	DietaryPrefs []DietaryPreference `gorm:"foreignKey:UserID" json:"dietary_preferences"`
-	Allergens    []Allergen          `gorm:"foreignKey:UserID" json:"allergens"`
+	ID                           uuid.UUID           `gorm:"type:uuid;primarykey;default:gen_random_uuid()" json:"id"`
+	CreatedAt                    time.Time           `json:"created_at"`
+	UpdatedAt                    time.Time           `json:"updated_at"`
+	DeletedAt                    gorm.DeletedAt      `gorm:"index" json:"-"`
+	Name                         string              `gorm:"not null" json:"name"`
+	Email                        string              `gorm:"uniqueIndex;not null" json:"email"`
+	PasswordHash                 string              `gorm:"not null" json:"-"`
+	EmailVerified                bool                `gorm:"column:email_verified;default:false" json:"is_email_verified"`
+	EmailVerifiedAt              *time.Time          `gorm:"column:email_verified_at" json:"email_verified_at,omitempty"`
+	VerificationToken            *string             `gorm:"column:verification_token" json:"-"`
+	VerificationTokenExpiresAt   *time.Time          `gorm:"column:verification_token_expires_at" json:"-"`
+	Profile                      UserProfile         `gorm:"foreignKey:UserID" json:"profile"`
+	DietaryPrefs                 []DietaryPreference `gorm:"foreignKey:UserID" json:"dietary_preferences"`
+	Allergens                    []Allergen          `gorm:"foreignKey:UserID" json:"allergens"`
 }
 
 type UserProfile struct {

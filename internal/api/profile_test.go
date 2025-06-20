@@ -55,7 +55,7 @@ func TestGetProfile(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/profile", nil)
-	c.Set("user_id", testUUID.String())
+	c.Set("user_id", testUUID)
 	c.Set("username", "testuser")
 
 	// Call handler
@@ -118,7 +118,7 @@ func TestUpdateProfile(t *testing.T) {
 	jsonData, _ := json.Marshal(req)
 	c.Request = httptest.NewRequest(http.MethodPut, "/profile", bytes.NewBuffer(jsonData))
 	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user_id", testUUID.String())
+	c.Set("user_id", testUUID)
 	c.Set("username", "testuser")
 
 	profileHandler.UpdateProfile(c)

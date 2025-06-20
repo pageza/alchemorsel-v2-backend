@@ -71,8 +71,8 @@ func SetupTestDB(t *testing.T) *TestDB {
 			},
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
-				wait.ForLog("database system is ready to accept connections"),
-			).WithStartupTimeout(60 * time.Second),
+				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			).WithStartupTimeout(120 * time.Second),
 		},
 		Started: true,
 	})
@@ -90,14 +90,30 @@ func SetupTestDB(t *testing.T) *TestDB {
 		t.Fatalf("failed to get container port: %v", err)
 	}
 
-	// Connect to database
+	// Connect to database with retry logic
 	dsn := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=disable",
 		host, mappedPort.Port())
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatalf("failed to connect to database: %v", err)
+	
+	var db *gorm.DB
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err == nil {
+			// Test the connection
+			sqlDB, pingErr := db.DB()
+			if pingErr == nil && sqlDB.Ping() == nil {
+				break
+			}
+		}
+		
+		// Wait before retrying
+		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+		
+		if i == maxRetries-1 {
+			t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
+		}
 	}
 
 	// Get underlying sql.DB to ensure proper cleanup
@@ -192,8 +208,9 @@ func SetupTestRouter(t *testing.T) *gin.Engine {
 	testDB := SetupTestDB(t)
 
 	// Create handlers
-	authHandler := NewAuthHandler(testDB.AuthService, testDB.DB)
-	recipeHandler := NewRecipeHandler(service.NewRecipeService(testDB.DB, nil), testDB.AuthService, nil, nil)
+	emailService := service.NewEmailService()
+	authHandler := NewAuthHandler(testDB.AuthService, emailService, testDB.DB)
+	recipeHandler := NewRecipeHandler(service.NewRecipeService(testDB.DB, nil), testDB.AuthService, nil, nil, testDB.DB)
 	// Use a mock LLM handler instead of the real one
 	llmHandler := NewMockLLMHandler()
 

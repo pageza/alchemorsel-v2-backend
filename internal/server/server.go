@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/api"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
@@ -24,18 +25,24 @@ type Server struct {
 }
 
 // NewServer creates a new server instance
-func NewServer(db *gorm.DB, auth *service.AuthService, profile *service.ProfileService) *Server {
+func NewServer(db *gorm.DB, auth *service.AuthService, profile *service.ProfileService, cfg *config.Config) *Server {
 	router := gin.Default()
 
 	// Add CORS middleware
 	router.Use(middleware.CORS())
 
-	// Create API handlers
-	authHandler := api.NewAuthHandler(auth, db)
+	// Create services
+	llmService, err := service.NewLLMService()
+	if err != nil {
+		log.Fatalf("Failed to create LLM service: %v", err)
+	}
+	embeddingService, err := service.NewEmbeddingService()
+	if err != nil {
+		log.Fatalf("Failed to create embedding service: %v", err)
+	}
 
-	// Register routes
-	api.RegisterProfileRoutes(router, profile, auth)
-	authHandler.RegisterRoutes(router.Group("/api/v1"))
+	// Register all routes
+	api.RegisterRoutes(router, db, auth, llmService, embeddingService, cfg)
 
 	return &Server{
 		router:  router,
