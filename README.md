@@ -2,6 +2,10 @@
 
 This is the backend application built with Go.
 
+## CI/CD Status
+- Automated testing on push to developing branch
+- 80% code coverage requirement enforced
+
 ## Prerequisites
 
 - Go 1.21 or higher
