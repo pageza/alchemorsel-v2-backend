@@ -181,10 +181,10 @@ func (s *AuthService) GenerateVerificationToken(ctx context.Context, userID uuid
 		return "", fmt.Errorf("failed to generate random token: %w", err)
 	}
 	token := hex.EncodeToString(bytes)
-	
+
 	// Set expiration to 24 hours from now
 	expiresAt := time.Now().Add(24 * time.Hour)
-	
+
 	// Update user with new verification token
 	result := s.db.Model(&models.User{}).
 		Where("id = ?", userID).
@@ -192,15 +192,15 @@ func (s *AuthService) GenerateVerificationToken(ctx context.Context, userID uuid
 			"verification_token":            token,
 			"verification_token_expires_at": expiresAt,
 		})
-	
+
 	if result.Error != nil {
 		return "", fmt.Errorf("failed to update verification token: %w", result.Error)
 	}
-	
+
 	if result.RowsAffected == 0 {
 		return "", errors.New("user not found")
 	}
-	
+
 	return token, nil
 }
 
@@ -208,7 +208,7 @@ func (s *AuthService) GenerateVerificationToken(ctx context.Context, userID uuid
 func (s *AuthService) ValidateVerificationToken(ctx context.Context, token string) (*models.User, error) {
 	var user models.User
 	now := time.Now()
-	
+
 	// Find user with valid token
 	err := s.db.Where("verification_token = ? AND verification_token_expires_at > ?", token, now).First(&user).Error
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *AuthService) ValidateVerificationToken(ctx context.Context, token strin
 		}
 		return nil, fmt.Errorf("failed to find user: %w", err)
 	}
-	
+
 	// Update user to mark email as verified and clear token
 	verifiedAt := time.Now()
 	result := s.db.Model(&user).Updates(map[string]interface{}{
@@ -226,17 +226,17 @@ func (s *AuthService) ValidateVerificationToken(ctx context.Context, token strin
 		"verification_token":            nil,
 		"verification_token_expires_at": nil,
 	})
-	
+
 	if result.Error != nil {
 		return nil, fmt.Errorf("failed to update user verification status: %w", result.Error)
 	}
-	
+
 	// Update the returned user object
 	user.EmailVerified = true
 	user.EmailVerifiedAt = &verifiedAt
 	user.VerificationToken = nil
 	user.VerificationTokenExpiresAt = nil
-	
+
 	return &user, nil
 }
 
@@ -250,23 +250,23 @@ func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string,
 		}
 		return fmt.Errorf("failed to find user: %w", err)
 	}
-	
+
 	// Check if already verified
 	if user.EmailVerified {
 		return errors.New("email already verified")
 	}
-	
+
 	// Generate new verification token
 	token, err := s.GenerateVerificationToken(ctx, user.ID)
 	if err != nil {
 		return fmt.Errorf("failed to generate verification token: %w", err)
 	}
-	
+
 	// Send verification email
 	if err := emailService.SendVerificationEmail(&user, token); err != nil {
 		return fmt.Errorf("failed to send verification email: %w", err)
 	}
-	
+
 	return nil
 }
 

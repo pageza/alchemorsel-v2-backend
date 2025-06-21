@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/mocks"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 )
@@ -19,7 +20,7 @@ import (
 func TestLLMQueryValidatesInput(t *testing.T) {
 	testDB := SetupTestDB(t)
 	router := setupLLMTestRouter(t, testDB)
-	
+
 	// Generate a valid JWT token
 	token, err := createTestJWT(testDB.AuthService)
 	assert.NoError(t, err)
@@ -41,7 +42,7 @@ func TestLLMQueryValidatesInput(t *testing.T) {
 func TestLLMQueryModifyRecipe(t *testing.T) {
 	testDB := SetupTestDB(t)
 	router := setupLLMTestRouter(t, testDB)
-	
+
 	// Generate a valid JWT token
 	token, err := createTestJWT(testDB.AuthService)
 	assert.NoError(t, err)
@@ -66,7 +67,8 @@ func TestLLMQueryModifyRecipe(t *testing.T) {
 
 func setupLLMTestRouter(t *testing.T, testDB *TestDB) *gin.Engine {
 	println("[DEBUG] setupLLMTestRouter called")
-	llmHandler := NewLLMHandler(testDB.DB, testDB.AuthService, NewMockLLMService())
+	mockRecipeService := &mocks.MockRecipeService{}
+	llmHandler := NewLLMHandler(testDB.DB, testDB.AuthService, NewMockLLMService(), mockRecipeService)
 
 	router := gin.New()
 	router.Use(gin.Recovery())

@@ -2,20 +2,20 @@ package api
 
 import (
 	"fmt"
-	"log"
-	"net/http"
 	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/database"
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"gorm.io/gorm"
+	"log"
+	"net/http"
 )
 
 // HealthCheck returns the health status of the API
 func HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status": "healthy",
+		"status":  "healthy",
 		"message": "Alchemorsel API is running",
 		"version": "v1.0.0",
 	})
@@ -38,7 +38,7 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	// Create rate limiters
 	var recipeCreationLimiter *middleware.RateLimiter
 	var recipeModificationLimiter *middleware.RateLimiter
-	
+
 	if redisClient != nil {
 		recipeCreationLimiter = middleware.NewRecipeCreationRateLimiter(redisClient)
 		recipeModificationLimiter = middleware.NewRecipeModificationRateLimiter(redisClient)
@@ -47,7 +47,7 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	// Create email and feedback services
 	emailService := service.NewEmailService()
 	feedbackService := service.NewFeedbackService(db, emailService)
-	
+
 	// Create handlers
 	authHandler := NewAuthHandler(authService, emailService, db)
 	recipeHandler := NewRecipeHandlerWithRateLimit(service.NewRecipeService(db, embeddingService), authService, llmService, embeddingService, db, recipeCreationLimiter, recipeModificationLimiter)
@@ -55,7 +55,7 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	profileHandler := NewProfileHandler(service.NewProfileService(db), authService)
 	dashboardHandler := NewDashboardHandler(db, authService)
 	feedbackHandler := NewFeedbackHandler(feedbackService, db)
-	
+
 	fmt.Println("DEBUG: Feedback handler created successfully")
 
 	// Register routes
@@ -64,17 +64,17 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	recipeHandler.RegisterRoutes(v1)
 	llmHandler.RegisterRoutes(v1)
 	profileHandler.RegisterRoutes(v1)
-	
+
 	// Feedback routes (supports both authenticated and anonymous)
 	fmt.Println("DEBUG: Registering feedback routes")
 	feedbackHandler.RegisterRoutes(v1)
 	fmt.Println("DEBUG: Feedback routes registered")
-	
+
 	// Dashboard routes (with auth middleware)
 	dashboardGroup := v1.Group("")
 	dashboardGroup.Use(middleware.AuthMiddleware(authService))
 	dashboardHandler.RegisterRoutes(dashboardGroup)
-	
+
 	// Rate limit status endpoint
 	if recipeCreationLimiter != nil {
 		RegisterRateLimitRoutes(v1, authService, recipeCreationLimiter, recipeModificationLimiter)
@@ -101,10 +101,10 @@ func RegisterRateLimitRoutes(router *gin.RouterGroup, authService service.IAuthS
 			}
 
 			c.JSON(http.StatusOK, gin.H{
-				"limit":       2,
-				"remaining":   remaining,
-				"reset_time":  resetTime.Unix(),
-				"window":      "1h",
+				"limit":      2,
+				"remaining":  remaining,
+				"reset_time": resetTime.Unix(),
+				"window":     "1h",
 			})
 		})
 
@@ -123,7 +123,7 @@ func RegisterRateLimitRoutes(router *gin.RouterGroup, authService service.IAuthS
 
 			userIDStr := fmt.Sprintf("%v", userID)
 			key := fmt.Sprintf("%s:%s", userIDStr, recipeID)
-			
+
 			remaining, resetTime, err := modificationLimiter.GetRemainingRequests(c.Request.Context(), key)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check rate limit"})
@@ -131,11 +131,11 @@ func RegisterRateLimitRoutes(router *gin.RouterGroup, authService service.IAuthS
 			}
 
 			c.JSON(http.StatusOK, gin.H{
-				"limit":       10,
-				"remaining":   remaining,
-				"reset_time":  resetTime.Unix(),
-				"window":      "1h",
-				"recipe_id":   recipeID,
+				"limit":      10,
+				"remaining":  remaining,
+				"reset_time": resetTime.Unix(),
+				"window":     "1h",
+				"recipe_id":  recipeID,
 			})
 		})
 	}

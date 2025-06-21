@@ -235,10 +235,10 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "Email verified successfully",
-		"user_id":      user.ID,
-		"email":        user.Email,
-		"verified_at":  user.EmailVerifiedAt,
+		"message":     "Email verified successfully",
+		"user_id":     user.ID,
+		"email":       user.Email,
+		"verified_at": user.EmailVerifiedAt,
 	})
 }
 

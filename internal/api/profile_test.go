@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/pageza/alchemorsel-v2/backend/internal/mocks"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
-	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers/mocks"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

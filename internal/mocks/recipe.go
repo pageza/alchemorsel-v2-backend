@@ -47,7 +47,7 @@ func (m *MockRecipeService) DeleteRecipe(ctx context.Context, id uuid.UUID) erro
 }
 
 // ListRecipes mocks the ListRecipes method
-func (m *MockRecipeService) ListRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error) {
+func (m *MockRecipeService) ListRecipes(ctx context.Context, userID *uuid.UUID) ([]*models.Recipe, error) {
 	args := m.Called(ctx, userID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -58,6 +58,27 @@ func (m *MockRecipeService) ListRecipes(ctx context.Context, userID uuid.UUID) (
 // SearchRecipes mocks the SearchRecipes method
 func (m *MockRecipeService) SearchRecipes(ctx context.Context, query string) ([]*models.Recipe, error) {
 	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Recipe), args.Error(1)
+}
+
+// FavoriteRecipe mocks the FavoriteRecipe method
+func (m *MockRecipeService) FavoriteRecipe(ctx context.Context, userID, recipeID uuid.UUID) error {
+	args := m.Called(ctx, userID, recipeID)
+	return args.Error(0)
+}
+
+// UnfavoriteRecipe mocks the UnfavoriteRecipe method
+func (m *MockRecipeService) UnfavoriteRecipe(ctx context.Context, userID, recipeID uuid.UUID) error {
+	args := m.Called(ctx, userID, recipeID)
+	return args.Error(0)
+}
+
+// GetFavoriteRecipes mocks the GetFavoriteRecipes method
+func (m *MockRecipeService) GetFavoriteRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error) {
+	args := m.Called(ctx, userID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

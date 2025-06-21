@@ -16,13 +16,13 @@ import (
 
 // RecipeHandler handles recipe-related requests
 type RecipeHandler struct {
-	recipeService            service.IRecipeService
-	authService              service.IAuthService
-	llmService               service.LLMServiceInterface
-	embeddingService         service.EmbeddingServiceInterface
-	db                       *gorm.DB
-	creationRateLimiter      *middleware.RateLimiter
-	modificationRateLimiter  *middleware.RateLimiter
+	recipeService           service.IRecipeService
+	authService             service.IAuthService
+	llmService              service.LLMServiceInterface
+	embeddingService        service.EmbeddingServiceInterface
+	db                      *gorm.DB
+	creationRateLimiter     *middleware.RateLimiter
+	modificationRateLimiter *middleware.RateLimiter
 }
 
 // NewRecipeHandler creates a new RecipeHandler
@@ -52,10 +52,10 @@ func NewRecipeHandlerWithRateLimit(recipeService service.IRecipeService, authSer
 // RegisterRoutes registers the recipe routes
 func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 	recipes := router.Group("/recipes")
-	
+
 	// Public routes (no authentication required) - ONLY for landing page
 	recipes.GET("/featured", h.GetFeaturedRecipes)
-	
+
 	// Protected routes (authentication required) - recipe browsing
 	protected := recipes.Group("")
 	protected.Use(middleware.AuthMiddleware(h.authService))
@@ -64,7 +64,7 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 		protected.GET("/search", h.SearchRecipes)
 		protected.GET("/:id", h.GetRecipe)
 	}
-	
+
 	// Email verification required routes (authentication + email verification)
 	verified := recipes.Group("")
 	verified.Use(middleware.AuthMiddleware(h.authService))
@@ -76,7 +76,7 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 			createGroup.Use(h.creationRateLimiter.RateLimitMiddleware())
 		}
 		createGroup.POST("", h.CreateRecipe)
-		
+
 		// Recipe modification with per-recipe rate limiting (10 per recipe per hour)
 		modifyGroup := verified.Group("")
 		if h.modificationRateLimiter != nil {
@@ -84,7 +84,7 @@ func (h *RecipeHandler) RegisterRoutes(router *gin.RouterGroup) {
 		}
 		modifyGroup.PUT("/:id", h.UpdateRecipe)
 		modifyGroup.DELETE("/:id", h.DeleteRecipe)
-		
+
 		// Favorite/unfavorite operations
 		verified.POST("/:id/favorite", h.FavoriteRecipe)
 		verified.DELETE("/:id/favorite", h.UnfavoriteRecipe)
@@ -198,11 +198,11 @@ func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 	id := c.Param("id")
 	println("[DEBUG] Recipe ID param: " + id)
 	fmt.Printf("[DEBUG] Context keys: %v\n", c.Keys)
-	
+
 	// User is always authenticated due to middleware
 	userIDValue := c.MustGet("user_id")
 	userID := userIDValue.(uuid.UUID)
-	
+
 	fmt.Printf("[DEBUG] Recipe ID param: %s\n", id)
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "recipe ID is required"})
@@ -244,13 +244,13 @@ func (h *RecipeHandler) GetRecipe(c *gin.Context) {
 			}
 		}
 	}
-	
+
 	// Return recipe with favorite status
 	type RecipeResponse struct {
 		*models.Recipe
 		IsFavorite bool `json:"is_favorite"`
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{"recipe": RecipeResponse{
 		Recipe:     recipe,
 		IsFavorite: isFavorite,
@@ -350,11 +350,11 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 	all := c.DefaultQuery("all", "false") == "true"
 	var recipes []*models.Recipe
 	var err error
-	
+
 	// User is always authenticated due to middleware
 	userIDValue := c.MustGet("user_id")
 	userID := userIDValue.(uuid.UUID)
-	
+
 	if all {
 		// Return all recipes if explicitly requested
 		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), nil)
@@ -366,7 +366,7 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	// Add favorite status to each recipe
 	favoriteRecipes, err := h.recipeService.GetFavoriteRecipes(c.Request.Context(), userID)
 	if err == nil {
@@ -375,13 +375,13 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 		for _, fav := range favoriteRecipes {
 			favoriteMap[fav.ID] = true
 		}
-		
+
 		// Create response with favorite status
 		type RecipeResponse struct {
 			*models.Recipe
 			IsFavorite bool `json:"is_favorite"`
 		}
-		
+
 		recipesWithFavorites := make([]RecipeResponse, len(recipes))
 		for i, recipe := range recipes {
 			recipesWithFavorites[i] = RecipeResponse{
@@ -389,11 +389,11 @@ func (h *RecipeHandler) ListRecipes(c *gin.Context) {
 				IsFavorite: favoriteMap[recipe.ID],
 			}
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{"recipes": recipesWithFavorites})
 		return
 	}
-	
+
 	// If error getting favorites, return recipes without favorite status
 	c.JSON(http.StatusOK, gin.H{"recipes": recipes})
 }
@@ -421,16 +421,16 @@ func (h *RecipeHandler) SearchRecipes(c *gin.Context) {
 	query := c.Query("q")
 	category := c.Query("category")
 	sortBy := c.DefaultQuery("sort", "newest")
-	
+
 	fmt.Printf("[DEBUG] SearchRecipes called with query=%s, category=%s, sort=%s\n", query, category, sortBy)
-	
+
 	// User is always authenticated due to middleware
 	userIDValue := c.MustGet("user_id")
 	userID := userIDValue.(uuid.UUID)
-	
+
 	var recipes []*models.Recipe
 	var err error
-	
+
 	if query != "" {
 		// Use semantic search if query is provided
 		recipes, err = h.recipeService.SearchRecipes(c.Request.Context(), query)
@@ -438,13 +438,13 @@ func (h *RecipeHandler) SearchRecipes(c *gin.Context) {
 		// Fall back to listing all recipes if no query
 		recipes, err = h.recipeService.ListRecipes(c.Request.Context(), nil)
 	}
-	
+
 	if err != nil {
 		fmt.Printf("[DEBUG] Error searching recipes: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	// Filter by category if specified
 	if category != "" && category != "All" {
 		filtered := make([]*models.Recipe, 0)
@@ -455,13 +455,13 @@ func (h *RecipeHandler) SearchRecipes(c *gin.Context) {
 		}
 		recipes = filtered
 	}
-	
+
 	// Sort results
 	// Note: For now we'll keep the database ordering, but this could be enhanced
 	// to support different sorting options like popularity, rating, etc.
-	
+
 	fmt.Printf("[DEBUG] Found %d recipes after filtering\n", len(recipes))
-	
+
 	// Add favorite status to each recipe
 	favoriteRecipes, err := h.recipeService.GetFavoriteRecipes(c.Request.Context(), userID)
 	if err == nil {
@@ -470,13 +470,13 @@ func (h *RecipeHandler) SearchRecipes(c *gin.Context) {
 		for _, fav := range favoriteRecipes {
 			favoriteMap[fav.ID] = true
 		}
-		
+
 		// Create response with favorite status
 		type RecipeResponse struct {
 			*models.Recipe
 			IsFavorite bool `json:"is_favorite"`
 		}
-		
+
 		recipesWithFavorites := make([]RecipeResponse, len(recipes))
 		for i, recipe := range recipes {
 			recipesWithFavorites[i] = RecipeResponse{
@@ -484,11 +484,11 @@ func (h *RecipeHandler) SearchRecipes(c *gin.Context) {
 				IsFavorite: favoriteMap[recipe.ID],
 			}
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{"recipes": recipesWithFavorites})
 		return
 	}
-	
+
 	// If error getting favorites, return recipes without favorite status
 	c.JSON(http.StatusOK, gin.H{"recipes": recipes})
 }
@@ -544,7 +544,7 @@ func (h *RecipeHandler) FavoriteRecipe(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "recipe favorited successfully",
+		"message":     "recipe favorited successfully",
 		"is_favorite": true,
 	})
 }
@@ -588,7 +588,7 @@ func (h *RecipeHandler) UnfavoriteRecipe(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "recipe unfavorited successfully",
+		"message":     "recipe unfavorited successfully",
 		"is_favorite": false,
 	})
 }

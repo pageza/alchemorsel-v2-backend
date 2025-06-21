@@ -26,9 +26,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 			Image:        "pgvector/pgvector:pg16",
 			ExposedPorts: []string{"5432/tcp"},
 			Env: map[string]string{
-				"POSTGRES_USER":     "testuser",
-				"POSTGRES_PASSWORD": "testpass",
-				"POSTGRES_DB":       "testdb",
+				"POSTGRES_USER":        "testuser",
+				"POSTGRES_PASSWORD":    "testpass",
+				"POSTGRES_DB":          "testdb",
 				"POSTGRES_INITDB_ARGS": "--auth-host=scram-sha-256",
 			},
 			WaitingFor: wait.ForAll(
@@ -58,7 +58,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	for i := 0; i < maxRetries; i++ {
 		dsn := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=disable",
 			host, mappedPort.Port())
-		
+
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
@@ -69,10 +69,10 @@ func setupTestDB(t *testing.T) *gorm.DB {
 				break
 			}
 		}
-		
+
 		// Wait before retrying
 		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
-		
+
 		if i == maxRetries-1 {
 			t.Fatalf("failed to connect to database after %d attempts: %v", maxRetries, err)
 		}

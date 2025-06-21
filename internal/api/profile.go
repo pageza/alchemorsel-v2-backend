@@ -51,7 +51,6 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-
 	profile, err := h.profileService.GetProfile(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -78,7 +77,6 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		"created_at":          user.CreatedAt,
 		"updated_at":          user.UpdatedAt,
 	}
-
 
 	c.JSON(http.StatusOK, gin.H{
 		"profile": profileData,

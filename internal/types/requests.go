@@ -51,16 +51,16 @@ type CreateFeedbackRequest struct {
 }
 
 type FeedbackResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Type        string    `json:"type"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Priority    string    `json:"priority"`
-	Status      string    `json:"status"`
-	UserAgent   string    `json:"user_agent,omitempty"`
-	URL         string    `json:"url,omitempty"`
-	AdminNotes  string    `json:"admin_notes,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          uuid.UUID  `json:"id"`
+	Type        string     `json:"type"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Priority    string     `json:"priority"`
+	Status      string     `json:"status"`
+	UserAgent   string     `json:"user_agent,omitempty"`
+	URL         string     `json:"url,omitempty"`
+	AdminNotes  string     `json:"admin_notes,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 	UserID      *uuid.UUID `json:"user_id,omitempty"`
 }
 

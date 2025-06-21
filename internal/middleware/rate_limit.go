@@ -61,8 +61,8 @@ func (rl *RateLimiter) RateLimitMiddleware() gin.HandlerFunc {
 
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":              "rate limit exceeded",
-				"message":            fmt.Sprintf("You have exceeded the rate limit of %d requests per %v", rl.config.Limit, rl.config.Window),
+				"error":                "rate limit exceeded",
+				"message":              fmt.Sprintf("You have exceeded the rate limit of %d requests per %v", rl.config.Limit, rl.config.Window),
 				"rate_limit_remaining": remaining,
 				"rate_limit_reset":     resetTime.Unix(),
 				"retry_after":          int(time.Until(resetTime).Seconds()),
@@ -86,7 +86,7 @@ func (rl *RateLimiter) IsAllowed(ctx context.Context, userID string) (bool, int,
 	pipe := rl.redis.Pipeline()
 	incrCmd := pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, rl.config.Window)
-	
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, 0, time.Time{}, err
@@ -97,7 +97,7 @@ func (rl *RateLimiter) IsAllowed(ctx context.Context, userID string) (bool, int,
 	if remaining < 0 {
 		remaining = 0
 	}
-	
+
 	resetTime := windowStart.Add(rl.config.Window)
 	allowed := count <= rl.config.Limit
 
@@ -124,7 +124,7 @@ func (rl *RateLimiter) CheckOnly(ctx context.Context, userID string) (bool, int,
 	if remaining < 0 {
 		remaining = 0
 	}
-	
+
 	resetTime := windowStart.Add(rl.config.Window)
 	allowed := count < rl.config.Limit // Use < instead of <= since we haven't incremented yet
 
@@ -141,7 +141,7 @@ func (rl *RateLimiter) IncrementUsage(ctx context.Context, userID string) error 
 	pipe := rl.redis.Pipeline()
 	pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, rl.config.Window)
-	
+
 	_, err := pipe.Exec(ctx)
 	return err
 }
@@ -165,7 +165,7 @@ func (rl *RateLimiter) GetRemainingRequests(ctx context.Context, userID string) 
 	if remaining < 0 {
 		remaining = 0
 	}
-	
+
 	resetTime := windowStart.Add(rl.config.Window)
 	return remaining, resetTime, nil
 }
@@ -207,7 +207,7 @@ func (rl *RateLimiter) PerRecipeRateLimitMiddleware() gin.HandlerFunc {
 
 		userIDStr := fmt.Sprintf("%v", userID)
 		key := fmt.Sprintf("%s:%s", userIDStr, recipeID)
-		
+
 		allowed, remaining, resetTime, err := rl.IsAllowed(c.Request.Context(), key)
 		if err != nil {
 			// Log error but don't fail the request
@@ -223,8 +223,8 @@ func (rl *RateLimiter) PerRecipeRateLimitMiddleware() gin.HandlerFunc {
 
 		if !allowed {
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":              "rate limit exceeded",
-				"message":            fmt.Sprintf("You have exceeded the rate limit of %d modifications per recipe per %v", rl.config.Limit, rl.config.Window),
+				"error":                "rate limit exceeded",
+				"message":              fmt.Sprintf("You have exceeded the rate limit of %d modifications per recipe per %v", rl.config.Limit, rl.config.Window),
 				"rate_limit_remaining": remaining,
 				"rate_limit_reset":     resetTime.Unix(),
 				"retry_after":          int(time.Until(resetTime).Seconds()),

@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/pageza/alchemorsel-v2/backend/config"
+	"github.com/redis/go-redis/v9"
 )
 
 // NewRedisClient creates a new Redis client

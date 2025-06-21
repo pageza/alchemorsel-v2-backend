@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/pageza/alchemorsel-v2/backend/config"
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/pageza/alchemorsel-v2/backend/internal/testhelpers"
@@ -33,7 +34,10 @@ func TestServer(t *testing.T) {
 	profileService := service.NewProfileService(db.DB())
 
 	// Create server
-	server := NewServer(db.DB(), authService, profileService)
+	cfg := &config.Config{
+		JWTSecret: "test-secret",
+	}
+	server := NewServer(db.DB(), authService, profileService, cfg)
 
 	// Test server initialization
 	err := server.Start("8080")
@@ -61,7 +65,10 @@ func TestNewServer(t *testing.T) {
 	authService := service.NewAuthService(db, "test-secret")
 	profileService := service.NewProfileService(db)
 
-	server := NewServer(db, authService, profileService)
+	cfg := &config.Config{
+		JWTSecret: "test-secret",
+	}
+	server := NewServer(db, authService, profileService, cfg)
 	assert.NotNil(t, server)
 
 	// Test health check endpoint (already registered by NewServer)
@@ -70,7 +77,7 @@ func TestNewServer(t *testing.T) {
 	server.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	// Verify response body contains expected health check data
 	expected := `{"message":"Alchemorsel API is running","status":"healthy","version":"v1.0.0"}`
 	assert.JSONEq(t, expected, w.Body.String())

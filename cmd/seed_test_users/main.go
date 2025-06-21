@@ -33,15 +33,15 @@ func main() {
 	}
 
 	now := time.Now()
-	
+
 	// Test users with different verification statuses
 	testUsers := []struct {
-		name        string
-		email       string
-		username    string
-		verified    bool
-		verifiedAt  *time.Time
-		role        string
+		name       string
+		email      string
+		username   string
+		verified   bool
+		verifiedAt *time.Time
+		role       string
 	}{
 		{
 			name:       "John Doe",
@@ -53,7 +53,7 @@ func main() {
 		},
 		{
 			name:       "Jane Smith",
-			email:      "jane.smith@example.com", 
+			email:      "jane.smith@example.com",
 			username:   "janesmith",
 			verified:   true,
 			verifiedAt: &now,
@@ -182,18 +182,18 @@ func main() {
 
 	log.Println("\n📋 Test Users Summary:")
 	log.Println("======================")
-	
+
 	var verifiedCount, unverifiedCount int64
 	db.Model(&models.User{}).Where("email_verified = ?", true).Count(&verifiedCount)
 	db.Model(&models.User{}).Where("email_verified = ?", false).Count(&unverifiedCount)
-	
+
 	log.Printf("✅ Verified users: %d", verifiedCount)
 	log.Printf("❌ Unverified users: %d", unverifiedCount)
 	log.Printf("📧 Total users: %d", verifiedCount+unverifiedCount)
-	
+
 	log.Println("\n🔑 Test Credentials:")
 	log.Println("Email: Any of the above emails")
 	log.Println("Password: testpassword123")
-	
+
 	log.Println("\nTest users created successfully!")
 }

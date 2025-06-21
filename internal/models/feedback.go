@@ -14,7 +14,7 @@ type Feedback struct {
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 	UserID      *uuid.UUID     `gorm:"type:uuid" json:"user_id,omitempty"`
 	User        *User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	Type        string         `gorm:"not null" json:"type"`        // bug, feature, general
+	Type        string         `gorm:"not null" json:"type"` // bug, feature, general
 	Title       string         `gorm:"not null" json:"title"`
 	Description string         `gorm:"type:text;not null" json:"description"`
 	Priority    string         `gorm:"default:'medium'" json:"priority"` // low, medium, high, critical

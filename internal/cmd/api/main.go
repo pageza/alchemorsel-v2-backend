@@ -27,7 +27,7 @@ func main() {
 	profileService := service.NewProfileService(db)
 
 	// Create and start server
-	srv := server.NewServer(db, authService, profileService)
+	srv := server.NewServer(db, authService, profileService, cfg)
 	if err := srv.Start(cfg.ServerPort); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

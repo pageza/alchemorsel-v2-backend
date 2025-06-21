@@ -242,10 +242,10 @@ func (s *LLMService) DeleteDraft(ctx context.Context, id string) error {
 // GenerateRecipe generates a recipe with retry logic for robustness
 func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
 	const maxRetries = 3
-	
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		fmt.Printf("[LLMHandler] Generation attempt %d/%d\n", attempt, maxRetries)
-		
+
 		content, err := s.generateRecipeAttempt(query, dietaryPrefs, allergens, originalRecipe)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Attempt %d failed: %v\n", attempt, err)
@@ -254,7 +254,7 @@ func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []stri
 			}
 			continue
 		}
-		
+
 		// Validate JSON by attempting to parse it
 		var tempRecipe RecipeDraft
 		if err := json.Unmarshal([]byte(content), &tempRecipe); err != nil {
@@ -264,11 +264,11 @@ func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []stri
 			}
 			continue
 		}
-		
+
 		fmt.Printf("[LLMHandler] Successfully generated recipe on attempt %d\n", attempt)
 		return content, nil
 	}
-	
+
 	return "", fmt.Errorf("failed to generate recipe after %d attempts", maxRetries)
 }
 
@@ -364,7 +364,7 @@ The cuisine field MUST be one of the listed cuisines above.`,
 	client := &http.Client{
 		Timeout: 120 * time.Second, // Increased to 120 seconds for complex recipes
 	}
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -379,7 +379,7 @@ The cuisine field MUST be one of the listed cuisines above.`,
 	// Read response with detailed logging
 	fmt.Printf("[LLMHandler] Response status: %d\n", resp.StatusCode)
 	fmt.Printf("[LLMHandler] Response headers: %v\n", resp.Header)
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
@@ -387,7 +387,7 @@ The cuisine field MUST be one of the listed cuisines above.`,
 
 	fmt.Printf("[LLMHandler] Raw response length: %d bytes\n", len(body))
 	fmt.Printf("[LLMHandler] RAW DEEPSEEK RESPONSE: %s\n", string(body))
-	
+
 	// Check if response was potentially truncated
 	if len(body) > 0 && !strings.HasSuffix(string(body), "}") {
 		fmt.Printf("[LLMHandler] WARNING: Response appears truncated (doesn't end with })\n")
@@ -414,14 +414,14 @@ The cuisine field MUST be one of the listed cuisines above.`,
 	fmt.Printf("[LLMHandler] EXTRACTED CONTENT BEFORE FIXES: %s\n", content)
 	content = fixDeepSeekJSON(content)
 	fmt.Printf("[LLMHandler] EXTRACTED CONTENT AFTER FIXES: %s\n", content)
-	
+
 	return content, nil
 }
 
 // fixDeepSeekJSON fixes common JSON formatting issues from DeepSeek API
 func fixDeepSeekJSON(content string) string {
 	fmt.Printf("[LLMHandler] Fixing DeepSeek JSON formatting issues...\n")
-	
+
 	// 1. Fix incomplete JSON (missing closing brace)
 	trimmed := strings.TrimSpace(content)
 	if !strings.HasSuffix(trimmed, "}") {
@@ -432,8 +432,8 @@ func fixDeepSeekJSON(content string) string {
 		}
 		// Handle incomplete field values by closing them properly
 		if strings.HasSuffix(trimmed, `"difficulty": "Easy"`) ||
-		   strings.HasSuffix(trimmed, `"difficulty": "Medium"`) ||
-		   strings.HasSuffix(trimmed, `"difficulty": "Hard"`) {
+			strings.HasSuffix(trimmed, `"difficulty": "Medium"`) ||
+			strings.HasSuffix(trimmed, `"difficulty": "Hard"`) {
 			content = trimmed + "\n}"
 		} else if strings.Contains(trimmed, `"difficulty":`) {
 			// If difficulty field is incomplete, fix it
@@ -447,26 +447,26 @@ func fixDeepSeekJSON(content string) string {
 			content = trimmed + "\n}"
 		}
 	}
-	
+
 	// 2. Fix single quotes to double quotes for JSON compliance
 	if strings.Contains(content, "'") {
 		fmt.Printf("[LLMHandler] Converting single quotes to double quotes\n")
 		content = strings.ReplaceAll(content, "'", "\"")
 	}
-	
+
 	// 3. Fix double double quotes (if any)
 	if strings.Contains(content, `""`) {
 		fmt.Printf("[LLMHandler] Fixing double quotes\n")
 		content = strings.ReplaceAll(content, `""`, `"`)
 	}
-	
+
 	// 4. Remove empty string entries in arrays
 	if strings.Contains(content, `""`) || strings.Contains(content, `"",`) {
 		fmt.Printf("[LLMHandler] Cleaning up empty entries\n")
 		content = strings.ReplaceAll(content, `,\n        ""`, "")
 		content = strings.ReplaceAll(content, `""`, "")
 	}
-	
+
 	// 5. Fix incomplete field values with missing quotes
 	if strings.Contains(content, `"difficulty": Easy`) {
 		fmt.Printf("[LLMHandler] Fixing missing quotes around difficulty value\n")
@@ -478,7 +478,7 @@ func fixDeepSeekJSON(content string) string {
 	if strings.Contains(content, `"difficulty": Hard`) {
 		content = strings.ReplaceAll(content, `"difficulty": Hard`, `"difficulty": "Hard"`)
 	}
-	
+
 	fmt.Printf("[LLMHandler] JSON formatting fixes applied\n")
 	return content
 }

@@ -166,13 +166,13 @@ func (s *RecipeService) UnfavoriteRecipe(ctx context.Context, userID, recipeID u
 // GetFavoriteRecipes retrieves all favorite recipes for a user
 func (s *RecipeService) GetFavoriteRecipes(ctx context.Context, userID uuid.UUID) ([]*models.Recipe, error) {
 	var recipes []models.Recipe
-	
+
 	err := s.db.Table("recipes").
 		Select("recipes.*").
 		Joins("JOIN recipe_favorites ON recipes.id = recipe_favorites.recipe_id").
 		Where("recipe_favorites.user_id = ?", userID).
 		Find(&recipes).Error
-	
+
 	if err != nil {
 		return nil, err
 	}

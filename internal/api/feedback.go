@@ -29,10 +29,10 @@ func (h *FeedbackHandler) RegisterRoutes(router *gin.RouterGroup) {
 	fmt.Println("DEBUG: Inside FeedbackHandler.RegisterRoutes")
 	feedback := router.Group("/feedback")
 	{
-		feedback.POST("/", h.CreateFeedback)              // Authenticated
-		feedback.GET("/", h.ListFeedback)                 // Admin only
-		feedback.GET("/:id", h.GetFeedback)               // Admin only
-		feedback.PUT("/:id/status", h.UpdateStatus)       // Admin only
+		feedback.POST("/", h.CreateFeedback)        // Authenticated
+		feedback.GET("/", h.ListFeedback)           // Admin only
+		feedback.GET("/:id", h.GetFeedback)         // Admin only
+		feedback.PUT("/:id/status", h.UpdateStatus) // Admin only
 	}
 	fmt.Println("DEBUG: Feedback routes registered successfully")
 }

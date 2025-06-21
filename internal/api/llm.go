@@ -16,11 +16,11 @@ import (
 
 // LLMHandler handles LLM-related requests
 type LLMHandler struct {
-	db               *gorm.DB
-	llmService       service.LLMServiceInterface
-	authService      *service.AuthService
-	recipeService    service.IRecipeService
-	creationLimiter  *middleware.RateLimiter
+	db              *gorm.DB
+	llmService      service.LLMServiceInterface
+	authService     *service.AuthService
+	recipeService   service.IRecipeService
+	creationLimiter *middleware.RateLimiter
 }
 
 // NewLLMHandler creates a new LLM handler
@@ -131,7 +131,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "recipe_id is required for forking"})
 			return
 		}
-		
+
 		// Check rate limiting before attempting fork (without incrementing)
 		if h.creationLimiter != nil {
 			allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
@@ -148,7 +148,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 				return
 			}
 		}
-		
+
 		// Get the original recipe from database
 		recipeUUID, err := uuid.Parse(req.RecipeID)
 		if err != nil {
@@ -156,14 +156,14 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid recipe_id format"})
 			return
 		}
-		
+
 		originalRecipe, err := h.recipeService.GetRecipe(c.Request.Context(), recipeUUID)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error getting original recipe: %v\n", err)
 			c.JSON(http.StatusNotFound, gin.H{"error": "original recipe not found"})
 			return
 		}
-		
+
 		// Convert the original recipe to a draft format for modification
 		originalDraft := &service.RecipeDraft{
 			Name:         originalRecipe.Name,
@@ -174,14 +174,14 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			PrepTime:     "", // These fields may not be in the same format
 			CookTime:     "",
 			Servings:     service.ServingsType{Value: "4"}, // Default servings
-			Difficulty:   "Medium", // Default difficulty since Recipe model doesn't have this field
+			Difficulty:   "Medium",                         // Default difficulty since Recipe model doesn't have this field
 			Calories:     originalRecipe.Calories,
 			Protein:      originalRecipe.Protein,
 			Carbs:        originalRecipe.Carbs,
 			Fat:          originalRecipe.Fat,
 			UserID:       userID.String(),
 		}
-		
+
 		// Generate modified recipe using LLM
 		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, originalDraft)
 		if err != nil {
@@ -191,7 +191,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			return
 		}
 		fmt.Printf("[LLMHandler] Forked Recipe JSON: %s\n", recipeJSON)
-		
+
 		var newRecipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &newRecipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse forked recipe JSON: %v\n", err)
@@ -199,7 +199,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
 			return
 		}
-		
+
 		newRecipe.UserID = userID.String()
 		if err := h.llmService.SaveDraft(c.Request.Context(), &newRecipe); err != nil {
 			fmt.Printf("[LLMHandler] Error saving forked draft: %v\n", err)
@@ -207,7 +207,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Only increment rate limit counter on successful fork generation and save
 		if h.creationLimiter != nil {
 			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
@@ -216,17 +216,17 @@ func (h *LLMHandler) Query(c *gin.Context) {
 				fmt.Printf("[LLMHandler] Rate limit incremented for successful fork by user %s\n", userID.String())
 			}
 		}
-		
+
 		fmt.Printf("[LLMHandler] Successfully forked recipe. New Draft ID: %s\n", newRecipe.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   newRecipe,
 			"draft_id": newRecipe.ID,
 		})
 		fmt.Println("[LLMHandler] Responded 200 OK with forked recipe and draft_id.")
-		
+
 	case "generate":
 		fmt.Println("[LLMHandler] Intent: generate")
-		
+
 		// Check rate limiting before attempting generation (without incrementing)
 		if h.creationLimiter != nil {
 			allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
@@ -243,7 +243,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 				return
 			}
 		}
-		
+
 		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, nil)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating recipe: %v\n", err)
@@ -253,7 +253,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		}
 		fmt.Printf("[LLMHandler] Recipe JSON length: %d\n", len(recipeJSON))
 		fmt.Printf("[LLMHandler] Recipe JSON: %s\n", recipeJSON)
-		
+
 		var recipe service.RecipeDraft
 		if err := json.Unmarshal([]byte(recipeJSON), &recipe); err != nil {
 			fmt.Printf("[LLMHandler] Failed to parse recipe JSON: %v\n", err)
@@ -273,7 +273,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Only increment rate limit counter on successful generation and save
 		if h.creationLimiter != nil {
 			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
@@ -282,7 +282,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 				fmt.Printf("[LLMHandler] Rate limit incremented for successful generation by user %s\n", userID.String())
 			}
 		}
-		
+
 		fmt.Printf("[LLMHandler] Successfully generated and saved draft. Recipe ID: %s\n", recipe.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   recipe,
@@ -296,7 +296,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "draft_id is required for modifications"})
 			return
 		}
-		
+
 		// Check rate limiting before attempting modification (without incrementing)
 		if h.creationLimiter != nil {
 			allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
@@ -313,7 +313,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 				return
 			}
 		}
-		
+
 		draft, err := h.llmService.GetDraft(c.Request.Context(), req.DraftID)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error getting draft: %v\n", err)
@@ -358,7 +358,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Only increment rate limit counter on successful modification and save
 		if h.creationLimiter != nil {
 			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
@@ -367,7 +367,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 				fmt.Printf("[LLMHandler] Rate limit incremented for successful modification by user %s\n", userID.String())
 			}
 		}
-		
+
 		fmt.Printf("[LLMHandler] Successfully modified and updated draft. Draft ID: %s\n", draft.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"recipe":   draft,

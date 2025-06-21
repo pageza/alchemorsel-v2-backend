@@ -77,7 +77,7 @@ func OptionalEmailVerification(db *gorm.DB) gin.HandlerFunc {
 		// Add verification status to context
 		c.Set("email_verified", user.EmailVerified)
 		c.Set("user_email", user.Email)
-		
+
 		c.Next()
 	}
 }

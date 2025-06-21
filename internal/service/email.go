@@ -43,12 +43,12 @@ func NewEmailService() IEmailService {
 		fromName:     readSecret("email_from_name"),
 		adminEmail:   readSecret("admin_email"),
 	}
-	
+
 	// Debug logging
 	fmt.Printf("Email service initialized with ADMIN_EMAIL: %s\n", service.adminEmail)
 	fmt.Printf("Email service initialized with SMTP_HOST: %s\n", service.smtpHost)
 	fmt.Printf("Email service initialized with SMTP_USERNAME: %s\n", service.smtpUsername)
-	
+
 	return service
 }
 
@@ -120,7 +120,7 @@ func (s *EmailService) buildVerificationEmailBody(user *models.User, token strin
 		baseURL = "http://localhost:5173" // Development fallback
 	}
 	verificationURL := fmt.Sprintf("%s/verify-email?token=%s", baseURL, token)
-	
+
 	return fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
@@ -164,7 +164,7 @@ func (s *EmailService) buildWelcomeEmailBody(user *models.User) string {
 	if frontendURL == "" {
 		frontendURL = "http://localhost:5173" // Development fallback
 	}
-	
+
 	return fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
