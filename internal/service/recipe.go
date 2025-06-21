@@ -168,6 +168,7 @@ func (s *RecipeService) GetFavoriteRecipes(ctx context.Context, userID uuid.UUID
 	var recipes []models.Recipe
 	
 	err := s.db.Table("recipes").
+		Select("recipes.*").
 		Joins("JOIN recipe_favorites ON recipes.id = recipe_favorites.recipe_id").
 		Where("recipe_favorites.user_id = ?", userID).
 		Find(&recipes).Error

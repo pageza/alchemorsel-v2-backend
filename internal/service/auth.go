@@ -221,7 +221,7 @@ func (s *AuthService) ValidateVerificationToken(ctx context.Context, token strin
 	// Update user to mark email as verified and clear token
 	verifiedAt := time.Now()
 	result := s.db.Model(&user).Updates(map[string]interface{}{
-		"email_verified":                true,
+		"is_email_verified":             true,
 		"email_verified_at":             verifiedAt,
 		"verification_token":            nil,
 		"verification_token_expires_at": nil,

@@ -15,7 +15,7 @@ type User struct {
 	Name                         string              `gorm:"not null" json:"name"`
 	Email                        string              `gorm:"uniqueIndex;not null" json:"email"`
 	PasswordHash                 string              `gorm:"not null" json:"-"`
-	EmailVerified                bool                `gorm:"column:email_verified;default:false" json:"is_email_verified"`
+	EmailVerified                bool                `gorm:"column:is_email_verified;default:false" json:"is_email_verified"`
 	EmailVerifiedAt              *time.Time          `gorm:"column:email_verified_at" json:"email_verified_at,omitempty"`
 	VerificationToken            *string             `gorm:"column:verification_token" json:"-"`
 	VerificationTokenExpiresAt   *time.Time          `gorm:"column:verification_token_expires_at" json:"-"`
