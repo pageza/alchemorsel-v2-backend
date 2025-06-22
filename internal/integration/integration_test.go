@@ -381,6 +381,11 @@ func TestIntegrationRegisterLoginCreateModify(t *testing.T) {
 	authService.On("Login", mock.Anything, testEmail, "password123").Return(&models.User{
 		ID:    testUserID,
 		Email: testEmail,
+	}, &models.UserProfile{
+		ID:       uuid.New(),
+		UserID:   testUserID,
+		Username: testUsername,
+		Bio:      "test bio",
 	}, nil)
 
 	// Mock profile operations
