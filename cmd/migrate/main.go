@@ -176,7 +176,10 @@ func main() {
 		// E2E-FIX-2025-B: Handle migrations that record themselves to prevent duplicate key errors
 		if _, err := tx.Exec("SELECT record_migration($1, $2)", version, file); err != nil {
 			// Check if this is a duplicate key error (migration already recorded itself)
-			if strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+			errorStr := err.Error()
+			if strings.Contains(errorStr, "duplicate key value violates unique constraint") ||
+			   strings.Contains(errorStr, "schema_migrations_version_key") ||
+			   strings.Contains(errorStr, "already exists") {
 				fmt.Printf("Migration %s recorded itself successfully\n", file)
 			} else {
 				// LINT-FIX-2025: Handle rollback error properly with error checking
