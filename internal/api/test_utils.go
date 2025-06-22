@@ -171,10 +171,11 @@ func CreateTestUserAndToken(t *testing.T, db *TestDB) (uuid.UUID, string) {
 	}
 
 	user := models.User{
-		ID:           userID,
-		Name:         "Test User",
-		Email:        fmt.Sprintf("testuser+%s@example.com", userID.String()),
-		PasswordHash: string(hashedPassword),
+		ID:            userID,
+		Name:          "Test User",
+		Email:         fmt.Sprintf("testuser+%s@example.com", userID.String()),
+		PasswordHash:  string(hashedPassword),
+		EmailVerified: true, // Enable email verification for tests
 	}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create test user: %v", err)
@@ -299,19 +300,9 @@ func (m *MockLLMService) GetDraft(ctx context.Context, id string) (*service.Reci
 	if draft, exists := m.drafts[id]; exists {
 		return draft, nil
 	}
-	return &service.RecipeDraft{
-		ID:           id,
-		Name:         "Test Recipe",
-		Description:  "Desc",
-		Category:     "Cat",
-		Ingredients:  []string{"i1"},
-		Instructions: []string{"s1"},
-		Calories:     100,
-		Protein:      10,
-		Carbs:        20,
-		Fat:          5,
-		UserID:       "00000000-0000-0000-0000-000000000001",
-	}, nil
+	// Return a default draft - in real tests this should be set up properly
+	// For now, return an error to indicate the draft doesn't exist
+	return nil, fmt.Errorf("draft not found")
 }
 
 func (m *MockLLMService) UpdateDraft(ctx context.Context, draft *service.RecipeDraft) error {

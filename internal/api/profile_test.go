@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -47,9 +48,19 @@ func TestGetProfile(t *testing.T) {
 		{ID: uuid.New(), Name: "Test", Ingredients: []string{}, Instructions: []string{}, UserID: testUUID},
 	}
 
+	// Mock user data
+	expectedUser := &models.User{
+		ID:              testUUID,
+		Name:            "Test User",
+		Email:           "test@example.com",
+		EmailVerified:   true,
+		EmailVerifiedAt: &time.Time{},
+	}
+
 	// Setup mock expectations
-	mockProfileService.On("GetProfile", context.Background(), testUUID).Return(expectedProfile, nil)
-	mockProfileService.On("GetUserRecipes", context.Background(), testUUID).Return(expectedRecipes, nil)
+	mockAuthService.On("GetUserByID", mock.Anything, testUUID).Return(expectedUser, nil)
+	mockProfileService.On("GetProfile", mock.Anything, testUUID).Return(expectedProfile, nil)
+	mockProfileService.On("GetUserRecipes", mock.Anything, testUUID).Return(expectedRecipes, nil)
 
 	// Create test request
 	w := httptest.NewRecorder()

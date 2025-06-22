@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,11 +20,10 @@ import (
 
 func TestLLMQueryValidatesInput(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := setupLLMTestRouter(t, testDB)
+	router, _ := setupLLMTestRouter(t, testDB)
 
-	// Generate a valid JWT token
-	token, err := createTestJWT(testDB.AuthService)
-	assert.NoError(t, err)
+	// Create test user and token
+	_, token := CreateTestUserAndToken(t, testDB)
 
 	// Test empty query
 	w := PerformRequestWithToken(router, "POST", "/api/v1/llm/query", map[string]interface{}{
@@ -41,34 +41,46 @@ func TestLLMQueryValidatesInput(t *testing.T) {
 
 func TestLLMQueryModifyRecipe(t *testing.T) {
 	testDB := SetupTestDB(t)
-	router := setupLLMTestRouter(t, testDB)
+	router, mockLLMService := setupLLMTestRouter(t, testDB)
 
-	// Generate a valid JWT token
-	token, err := createTestJWT(testDB.AuthService)
-	assert.NoError(t, err)
+	// Create test user and token
+	userID, token := CreateTestUserAndToken(t, testDB)
+
+	// Create a draft for the user first using the shared mock LLM service
+	draft := &service.RecipeDraft{
+		ID:           "test-draft-id",
+		Name:         "Test Recipe",
+		Description:  "Desc",
+		Category:     "Cat",
+		Ingredients:  []string{"beef", "salt", "pepper"},
+		Instructions: []string{"s1"},
+		Calories:     100,
+		Protein:      10,
+		Carbs:        20,
+		Fat:          5,
+		UserID:       userID.String(), // Use the actual test user ID
+	}
+	_ = mockLLMService.SaveDraft(context.Background(), draft)
 
 	// Test recipe modification
 	w := PerformRequestWithToken(router, "POST", "/api/v1/llm/query", map[string]interface{}{
 		"query":    "Make this recipe vegetarian",
 		"intent":   "modify",
 		"draft_id": "test-draft-id",
-		"recipe": map[string]interface{}{
-			"name":        "Test Recipe",
-			"ingredients": []string{"beef", "salt", "pepper"},
-		},
 	}, token)
 	assert.Equal(t, 200, w.Code)
 
 	var response map[string]interface{}
-	err = json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Contains(t, response, "recipe")
 }
 
-func setupLLMTestRouter(t *testing.T, testDB *TestDB) *gin.Engine {
+func setupLLMTestRouter(t *testing.T, testDB *TestDB) (*gin.Engine, *MockLLMService) {
 	println("[DEBUG] setupLLMTestRouter called")
 	mockRecipeService := &mocks.MockRecipeService{}
-	llmHandler := NewLLMHandler(testDB.DB, testDB.AuthService, NewMockLLMService(), mockRecipeService)
+	mockLLMService := NewMockLLMService()
+	llmHandler := NewLLMHandler(testDB.DB, testDB.AuthService, mockLLMService, mockRecipeService)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -80,7 +92,7 @@ func setupLLMTestRouter(t *testing.T, testDB *TestDB) *gin.Engine {
 
 	llmHandler.RegisterRoutes(v1)
 
-	return router
+	return router, mockLLMService
 }
 
 // createTestJWT creates a valid JWT token for testing
