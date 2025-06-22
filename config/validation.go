@@ -91,9 +91,8 @@ func ValidateConfig(cfg *Config) error {
 		if cfg.JWTSecret == "" {
 			errors = append(errors, "TEST_JWT_SECRET GitHub Actions secret is required in CI environment")
 		}
-		if cfg.RedisPassword == "" {
-			errors = append(errors, "TEST_REDIS_PASSWORD GitHub Actions secret is required in CI environment")
-		}
+		// E2E-FIX-2025-E: Allow empty Redis password in CI since Redis runs without auth in test setup
+		// Redis password is optional in CI environment when Redis is configured without authentication
 	} else {
 		// In other environments, sensitive values must come from Docker secrets
 		if cfg.DBPassword == "" {
