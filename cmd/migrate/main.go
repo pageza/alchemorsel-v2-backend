@@ -125,10 +125,18 @@ func main() {
 		version := strings.Split(file, "_")[0]
 
 		// Check if migration has already been applied
+		// Handle the bootstrap case where migration functions don't exist yet
 		var applied bool
 		err := db.QueryRow("SELECT migration_applied($1)", version).Scan(&applied)
 		if err != nil {
-			log.Fatalf("failed to check migration status: %v", err)
+			// If the function doesn't exist, this is likely the first migration
+			// Check if this is the migration tracking setup migration
+			if strings.Contains(err.Error(), "function migration_applied") && version == "000000" {
+				fmt.Printf("Setting up migration tracking system: %s\n", file)
+				applied = false // Force execution of the migration tracking setup
+			} else {
+				log.Fatalf("failed to check migration status: %v", err)
+			}
 		}
 
 		if applied {
