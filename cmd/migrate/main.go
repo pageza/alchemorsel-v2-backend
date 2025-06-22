@@ -172,22 +172,26 @@ func main() {
 			log.Fatalf("failed to apply migration %s: %v", file, err)
 		}
 
-		// Record migration (only if the migration didn't record itself)
-		// E2E-FIX-2025-B: Handle migrations that record themselves to prevent duplicate key errors
-		if _, err := tx.Exec("SELECT record_migration($1, $2)", version, file); err != nil {
-			// Check if this is a duplicate key error (migration already recorded itself)
-			errorStr := err.Error()
-			if strings.Contains(errorStr, "duplicate key value violates unique constraint") ||
-			   strings.Contains(errorStr, "schema_migrations_version_key") ||
-			   strings.Contains(errorStr, "already exists") {
-				fmt.Printf("Migration %s recorded itself successfully\n", file)
-			} else {
+		// E2E-FIX-2025-D: Check if migration already recorded itself before trying to record it
+		// Some migrations call record_migration() internally, so we need to check first
+		var migrationExists bool
+		checkErr := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&migrationExists)
+		if checkErr != nil {
+			// If we can't check, assume it doesn't exist and try to record
+			migrationExists = false
+		}
+
+		if !migrationExists {
+			// Record migration since it didn't record itself
+			if _, err := tx.Exec("SELECT record_migration($1, $2)", version, file); err != nil {
 				// LINT-FIX-2025: Handle rollback error properly with error checking
 				if rollbackErr := tx.Rollback(); rollbackErr != nil {
 					log.Printf("failed to rollback transaction: %v", rollbackErr)
 				}
 				log.Fatalf("failed to record migration: %v", err)
 			}
+		} else {
+			fmt.Printf("Migration %s already recorded (self-recording migration)\n", file)
 		}
 
 		// Commit transaction
