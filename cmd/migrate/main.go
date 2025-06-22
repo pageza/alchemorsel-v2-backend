@@ -172,13 +172,19 @@ func main() {
 			log.Fatalf("failed to apply migration %s: %v", file, err)
 		}
 
-		// Record migration
+		// Record migration (only if the migration didn't record itself)
+		// E2E-FIX-2025-B: Handle migrations that record themselves to prevent duplicate key errors
 		if _, err := tx.Exec("SELECT record_migration($1, $2)", version, file); err != nil {
-			// LINT-FIX-2025: Handle rollback error properly with error checking
-			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			// Check if this is a duplicate key error (migration already recorded itself)
+			if strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+				fmt.Printf("Migration %s recorded itself successfully\n", file)
+			} else {
+				// LINT-FIX-2025: Handle rollback error properly with error checking
+				if rollbackErr := tx.Rollback(); rollbackErr != nil {
+					log.Printf("failed to rollback transaction: %v", rollbackErr)
+				}
+				log.Fatalf("failed to record migration: %v", err)
 			}
-			log.Fatalf("failed to record migration: %v", err)
 		}
 
 		// Commit transaction
