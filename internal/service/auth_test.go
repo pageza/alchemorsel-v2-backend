@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context" // LINT-FIX-2025: Add context import for context.TODO() usage
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -107,7 +108,12 @@ func setupAuthTest(t *testing.T) (*gin.Engine, *testhelpers.TestDatabase, *servi
 
 func TestRegisterMissingPrefs(t *testing.T) {
 	router, db, authSvc := setupAuthTest(t)
-	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	// LINT-FIX-2025: Handle DropTable error return value properly
+	defer func() {
+		if err := db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{}); err != nil {
+			t.Logf("Warning: failed to drop test tables: %v", err)
+		}
+	}()
 
 	// Test registration without preferences
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(`{
@@ -154,7 +160,12 @@ func TestRegisterMissingPrefs(t *testing.T) {
 
 func TestRegisterWithPrefs(t *testing.T) {
 	router, db, _ := setupAuthTest(t)
-	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	// LINT-FIX-2025: Handle DropTable error return value properly
+	defer func() {
+		if err := db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{}); err != nil {
+			t.Logf("Warning: failed to drop test tables: %v", err)
+		}
+	}()
 
 	// Test registration with preferences
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(`{
@@ -201,10 +212,16 @@ func TestRegisterWithPrefs(t *testing.T) {
 
 func TestLogin(t *testing.T) {
 	router, db, authSvc := setupAuthTest(t)
-	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	// LINT-FIX-2025: Handle DropTable error return value properly
+	defer func() {
+		if err := db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{}); err != nil {
+			t.Logf("Warning: failed to drop test tables: %v", err)
+		}
+	}()
 
 	// Register a user first
-	user, err := authSvc.Register(nil, "t3@example.com", "password123", &types.UserPreferences{
+	// LINT-FIX-2025: Use context.TODO() instead of nil context for better error handling
+	user, err := authSvc.Register(context.TODO(), "t3@example.com", "password123", &types.UserPreferences{
 		DietaryPrefs: []string{"vegetarian"},
 		Allergies:    []string{},
 	})
@@ -248,10 +265,16 @@ func TestLogin(t *testing.T) {
 
 func TestLoginInvalidCredentials(t *testing.T) {
 	router, db, authSvc := setupAuthTest(t)
-	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	// LINT-FIX-2025: Handle DropTable error return value properly
+	defer func() {
+		if err := db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{}); err != nil {
+			t.Logf("Warning: failed to drop test tables: %v", err)
+		}
+	}()
 
 	// Register a user first
-	_, err := authSvc.Register(nil, "t4@example.com", "password123", &types.UserPreferences{
+	// LINT-FIX-2025: Use context.TODO() instead of nil context for better error handling
+	_, err := authSvc.Register(context.TODO(), "t4@example.com", "password123", &types.UserPreferences{
 		DietaryPrefs: []string{"vegetarian"},
 		Allergies:    []string{},
 	})
@@ -286,7 +309,12 @@ func TestLoginInvalidCredentials(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	router, db, _ := setupAuthTest(t)
-	defer db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{})
+	// LINT-FIX-2025: Handle DropTable error return value properly
+	defer func() {
+		if err := db.DB().Migrator().DropTable(&models.User{}, &models.UserProfile{}); err != nil {
+			t.Logf("Warning: failed to drop test tables: %v", err)
+		}
+	}()
 
 	// Test registration
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", strings.NewReader(`{

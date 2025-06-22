@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	// LINT-FIX-2025: Removed unused io import after replacing ioutil usage with os package
 	"log"
 	"os"
 	"path/filepath"
@@ -28,10 +28,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	// LINT-FIX-2025: Handle database close error properly
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Warning: failed to close database connection: %v", err)
+		}
+	}()
 
 	migrationsDir := "migrations"
-	files, err := ioutil.ReadDir(migrationsDir)
+	// LINT-FIX-2025: Use os.ReadDir instead of deprecated ioutil.ReadDir
+	files, err := os.ReadDir(migrationsDir)
 	if err != nil {
 		log.Fatalf("failed to read migrations directory: %v", err)
 	}
@@ -73,8 +79,9 @@ func main() {
 			log.Fatalf("rollback file not found: %s", rollbackPath)
 		}
 
+		// LINT-FIX-2025: Use os.ReadFile instead of deprecated ioutil.ReadFile
 		// Read and execute rollback
-		content, err := ioutil.ReadFile(rollbackPath)
+		content, err := os.ReadFile(rollbackPath)
 		if err != nil {
 			log.Fatalf("failed to read rollback file: %v", err)
 		}
@@ -87,13 +94,19 @@ func main() {
 
 		// Execute rollback
 		if _, err := tx.Exec(string(content)); err != nil {
-			tx.Rollback()
+			// LINT-FIX-2025: Handle rollback error properly with error checking
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			}
 			log.Fatalf("failed to execute rollback: %v", err)
 		}
 
 		// Remove migration record
 		if _, err := tx.Exec("SELECT remove_migration($1)", lastMigration.Version); err != nil {
-			tx.Rollback()
+			// LINT-FIX-2025: Handle rollback error properly with error checking
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			}
 			log.Fatalf("failed to remove migration record: %v", err)
 		}
 
@@ -132,21 +145,31 @@ func main() {
 			log.Fatalf("failed to start transaction: %v", err)
 		}
 
+		// LINT-FIX-2025: Use os.ReadFile instead of deprecated ioutil.ReadFile
 		// Read and execute migration
-		content, err := ioutil.ReadFile(path)
+		content, err := os.ReadFile(path)
 		if err != nil {
-			tx.Rollback()
+			// LINT-FIX-2025: Handle rollback error properly with error checking
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			}
 			log.Fatalf("failed to read migration %s: %v", file, err)
 		}
 
 		if _, err := tx.Exec(string(content)); err != nil {
-			tx.Rollback()
+			// LINT-FIX-2025: Handle rollback error properly with error checking
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			}
 			log.Fatalf("failed to apply migration %s: %v", file, err)
 		}
 
 		// Record migration
 		if _, err := tx.Exec("SELECT record_migration($1, $2)", version, file); err != nil {
-			tx.Rollback()
+			// LINT-FIX-2025: Handle rollback error properly with error checking
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			}
 			log.Fatalf("failed to record migration: %v", err)
 		}
 

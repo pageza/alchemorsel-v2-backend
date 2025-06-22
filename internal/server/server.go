@@ -19,7 +19,7 @@ type Server struct {
 	router  *gin.Engine
 	http    *http.Server
 	db      *gorm.DB
-	logger  *log.Logger
+	// LINT-FIX-2025: Removed unused logger field that was never used in server operations
 	auth    *service.AuthService
 	profile *service.ProfileService
 }

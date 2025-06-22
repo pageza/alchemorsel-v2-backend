@@ -11,11 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	// LINT-FIX-2025: Removed unused uuid and types imports after removing createTestJWT function
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
 	"github.com/pageza/alchemorsel-v2/backend/internal/mocks"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
-	"github.com/pageza/alchemorsel-v2/backend/internal/types"
 )
 
 func TestLLMQueryValidatesInput(t *testing.T) {
@@ -95,14 +94,9 @@ func setupLLMTestRouter(t *testing.T, testDB *TestDB) (*gin.Engine, *MockLLMServ
 	return router, mockLLMService
 }
 
-// createTestJWT creates a valid JWT token for testing
-func createTestJWT(authService *service.AuthService) (string, error) {
-	testUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	return authService.GenerateToken(&types.TokenClaims{
-		UserID:   testUserID,
-		Username: "testuser",
-	})
-}
+// LINT-FIX-2025: Removed unused createTestJWT function that was never called in any tests
+// The function was creating JWT tokens but no tests were using it
+// If needed in the future, this helper can be re-added when actually used
 
 // PerformRequestWithToken performs an HTTP request with a JWT token
 func PerformRequestWithToken(router *gin.Engine, method, path string, body interface{}, token string) *httptest.ResponseRecorder {

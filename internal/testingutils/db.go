@@ -150,10 +150,12 @@ func SetupTestDatabase(t *testing.T) *TestDB {
 				"POSTGRES_PASSWORD": "testpass",
 				"POSTGRES_DB":       "testdb",
 			},
+			// LINT-FIX-2025: Replace deprecated WithStartupTimeout with WithDeadline
+			// WithStartupTimeout is deprecated in testcontainers, use WithDeadline instead
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
 				wait.ForLog("database system is ready to accept connections"),
-			).WithStartupTimeout(60 * time.Second),
+			).WithDeadline(60 * time.Second),
 		},
 		Started: true,
 	})

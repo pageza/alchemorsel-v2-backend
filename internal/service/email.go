@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	// LINT-FIX-2025: Import golang.org/x/text/cases for proper title casing
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 )
@@ -59,8 +62,11 @@ func (s *EmailService) SendFeedbackNotification(feedback *models.Feedback, user 
 		toEmail = s.fromEmail
 	}
 
+	// LINT-FIX-2025: Replace deprecated strings.Title with golang.org/x/text/cases
+	// strings.Title is deprecated since Go 1.18 due to Unicode handling issues
+	caser := cases.Title(language.English)
 	// Create email subject
-	subject := fmt.Sprintf("[Alchemorsel] New %s: %s", strings.Title(feedback.Type), feedback.Title)
+	subject := fmt.Sprintf("[Alchemorsel] New %s: %s", caser.String(feedback.Type), feedback.Title)
 
 	// Create detailed email body
 	body := s.buildFeedbackEmailBody(feedback, user)
@@ -209,6 +215,8 @@ func (s *EmailService) buildWelcomeEmailBody(user *models.User) string {
 }
 
 func (s *EmailService) buildFeedbackEmailBody(feedback *models.Feedback, user *models.User) string {
+	// LINT-FIX-2025: Create title caser for proper case handling
+	caser := cases.Title(language.English)
 	var userInfo string
 	if user != nil {
 		userInfo = fmt.Sprintf(`
@@ -285,11 +293,12 @@ func (s *EmailService) buildFeedbackEmailBody(feedback *models.Feedback, user *m
 </body>
 </html>
 	`,
-		strings.Title(feedback.Type),
+		// LINT-FIX-2025: Use proper title casing with golang.org/x/text/cases
+		caser.String(feedback.Type),
 		feedback.Title,
-		strings.Title(feedback.Type),
-		strings.Title(feedback.Priority),
-		strings.Title(feedback.Status),
+		caser.String(feedback.Type),
+		caser.String(feedback.Priority),
+		caser.String(feedback.Status),
 		feedback.CreatedAt.Format("2006-01-02 15:04:05 MST"),
 		strings.ReplaceAll(feedback.Description, "\n", "<br>"),
 		userInfo,

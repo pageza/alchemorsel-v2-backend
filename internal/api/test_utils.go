@@ -32,10 +32,10 @@ type MockTokenValidator struct {
 }
 
 func (v *MockTokenValidator) ValidateToken(token string) (*types.TokenClaims, error) {
-	// Remove "Bearer " prefix if present
-	if strings.HasPrefix(token, "Bearer ") {
-		token = strings.TrimPrefix(token, "Bearer ")
-	}
+	// LINT-FIX-2025: Use unconditional TrimPrefix instead of conditional check
+	// gosimple suggests this pattern is more idiomatic and handles edge cases better
+	token = strings.TrimPrefix(token, "Bearer ")
+	
 	args := v.Called(token)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -69,10 +69,12 @@ func SetupTestDB(t *testing.T) *TestDB {
 				"POSTGRES_PASSWORD": "testpass",
 				"POSTGRES_DB":       "testdb",
 			},
+			// LINT-FIX-2025: Replace deprecated WithStartupTimeout with WithDeadline
+			// WithStartupTimeout is deprecated in testcontainers, use WithDeadline instead
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
 				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
-			).WithStartupTimeout(120 * time.Second),
+			).WithDeadline(120 * time.Second),
 		},
 		Started: true,
 	})

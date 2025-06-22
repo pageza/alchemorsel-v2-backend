@@ -426,10 +426,9 @@ func fixDeepSeekJSON(content string) string {
 	trimmed := strings.TrimSpace(content)
 	if !strings.HasSuffix(trimmed, "}") {
 		fmt.Printf("[LLMHandler] Adding missing closing brace\n")
-		// Remove trailing comma if present
-		if strings.HasSuffix(trimmed, ",") {
-			trimmed = strings.TrimSuffix(trimmed, ",")
-		}
+		// LINT-FIX-2025: Use unconditional TrimSuffix instead of conditional check
+		// gosimple suggests this pattern is more idiomatic and handles edge cases better
+		trimmed = strings.TrimSuffix(trimmed, ",")
 		// Handle incomplete field values by closing them properly
 		if strings.HasSuffix(trimmed, `"difficulty": "Easy"`) ||
 			strings.HasSuffix(trimmed, `"difficulty": "Medium"`) ||
