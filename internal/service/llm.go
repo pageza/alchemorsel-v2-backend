@@ -275,30 +275,52 @@ func (s *LLMService) GenerateRecipe(query string, dietaryPrefs, allergens []stri
 // generateRecipeAttempt performs a single attempt at recipe generation
 func (s *LLMService) generateRecipeAttempt(query string, dietaryPrefs, allergens []string, originalRecipe *RecipeDraft) (string, error) {
 	var prompt string
+	
+	// Build dietary restrictions message that applies to ALL recipe types
+	var dietaryRestrictions string
+	if len(dietaryPrefs) > 0 || len(allergens) > 0 {
+		dietaryRestrictions = "\n\n⚠️ CRITICAL DIETARY REQUIREMENTS (MUST BE FOLLOWED):\n"
+		if len(dietaryPrefs) > 0 {
+			dietaryRestrictions += fmt.Sprintf("- This recipe MUST be suitable for: %s\n", strings.Join(dietaryPrefs, ", "))
+			dietaryRestrictions += "- NEVER include ingredients that violate these dietary preferences\n"
+		}
+		if len(allergens) > 0 {
+			dietaryRestrictions += fmt.Sprintf("- ABSOLUTELY AVOID these allergens: %s\n", strings.Join(allergens, ", "))
+			dietaryRestrictions += "- Check ALL ingredients and sub-ingredients for these allergens\n"
+		}
+		dietaryRestrictions += "\nFAILURE TO FOLLOW THESE RESTRICTIONS COULD CAUSE SERIOUS HARM!"
+	}
+	
 	if originalRecipe != nil {
 		// For modifications, include the original recipe in the prompt
-		prompt = fmt.Sprintf("Modify this recipe: %s\n\nOriginal recipe:\nName: %s\nDescription: %s\nIngredients: %s\nInstructions: %s\n\nModification request: %s",
+		prompt = fmt.Sprintf("Modify this recipe: %s\n\nOriginal recipe:\nName: %s\nDescription: %s\nIngredients: %s\nInstructions: %s\n\nModification request: %s%s",
 			originalRecipe.Name,
 			originalRecipe.Name,
 			originalRecipe.Description,
 			strings.Join(originalRecipe.Ingredients, "\n"),
 			strings.Join(originalRecipe.Instructions, "\n"),
-			query)
+			query,
+			dietaryRestrictions)
 	} else {
 		// For new recipes
-		prompt = fmt.Sprintf("Generate a recipe for: %s", query)
-		if len(dietaryPrefs) > 0 {
-			prompt += ". The recipe should be suitable for: " + strings.Join(dietaryPrefs, ", ")
-		}
-		if len(allergens) > 0 {
-			prompt += ". Avoid using: " + strings.Join(allergens, ", ")
-		}
+		prompt = fmt.Sprintf("Generate a recipe for: %s%s", query, dietaryRestrictions)
 	}
 
 	messages := []Message{
 		{
 			Role: "system",
-			Content: `You are a professional chef and nutritionist. Please provide your response in JSON format with the following structure:
+			Content: `You are a professional chef and nutritionist who STRICTLY RESPECTS dietary restrictions and allergens.
+
+⚠️ CRITICAL SAFETY RULES:
+1. When a user has dietary restrictions (vegan, vegetarian, gluten-free, etc.), you MUST ensure ALL ingredients comply
+2. For vegan recipes: NO meat, dairy, eggs, honey, or ANY animal products
+3. For vegetarian recipes: NO meat, poultry, or fish (dairy and eggs are allowed unless specified otherwise)
+4. For gluten-free: NO wheat, barley, rye, or ingredients containing gluten
+5. For dairy-free: NO milk, cheese, butter, cream, yogurt, or ANY dairy products
+6. For allergens: NEVER include the specified allergens in ANY form, including traces or derivatives
+7. ALWAYS suggest appropriate substitutes that maintain the recipe's integrity
+
+Please provide your response in JSON format with the following structure:
 {
     "name": "Recipe name",
     "description": "Brief description of the recipe",
@@ -326,7 +348,9 @@ func (s *LLMService) generateRecipeAttempt(query string, dietaryPrefs, allergens
 
 Note: The calories, protein, carbs, and fat fields must be numbers, not strings.
 The category field MUST be one of the listed categories above.
-The cuisine field MUST be one of the listed cuisines above.`,
+The cuisine field MUST be one of the listed cuisines above.
+
+REMEMBER: User safety depends on you following dietary restrictions EXACTLY!`,
 		},
 		{
 			Role:    "user",

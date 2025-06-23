@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/pageza/alchemorsel-v2/backend/internal/middleware"
+	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 )
 
@@ -123,6 +124,33 @@ func (h *LLMHandler) Query(c *gin.Context) {
 	}
 	fmt.Printf("[LLMHandler] user_id string: %s\n", userID.String())
 
+	// Fetch user with dietary preferences and allergens
+	var user models.User
+	err := h.db.Preload("DietaryPrefs").Preload("Allergens").Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		fmt.Printf("[LLMHandler] Failed to fetch user with dietary preferences: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user preferences"})
+		return
+	}
+
+	// Extract dietary preferences and allergens into string arrays
+	var dietaryPrefs []string
+	for _, pref := range user.DietaryPrefs {
+		if pref.PreferenceType != "" {
+			dietaryPrefs = append(dietaryPrefs, pref.PreferenceType)
+		} else if pref.CustomName != "" {
+			dietaryPrefs = append(dietaryPrefs, pref.CustomName)
+		}
+	}
+
+	var allergens []string
+	for _, allergen := range user.Allergens {
+		allergens = append(allergens, allergen.AllergenName)
+	}
+
+	fmt.Printf("[LLMHandler] User dietary preferences: %v\n", dietaryPrefs)
+	fmt.Printf("[LLMHandler] User allergens: %v\n", allergens)
+
 	switch req.Intent {
 	case "fork":
 		fmt.Println("[LLMHandler] Intent: fork")
@@ -182,8 +210,8 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			UserID:       userID.String(),
 		}
 
-		// Generate modified recipe using LLM
-		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, originalDraft)
+		// Generate modified recipe using LLM with dietary restrictions
+		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, dietaryPrefs, allergens, originalDraft)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating forked recipe: %v\n", err)
 			// Don't increment rate limit counter on generation failure
@@ -244,7 +272,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			}
 		}
 
-		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, nil)
+		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, dietaryPrefs, allergens, nil)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating recipe: %v\n", err)
 			// Don't increment rate limit counter on generation failure
@@ -325,7 +353,7 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized"})
 			return
 		}
-		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, []string{}, []string{}, draft)
+		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, dietaryPrefs, allergens, draft)
 		if err != nil {
 			fmt.Printf("[LLMHandler] Error generating modified recipe: %v\n", err)
 			// Don't increment rate limit counter on generation failure
