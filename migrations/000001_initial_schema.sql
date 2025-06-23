@@ -101,7 +101,7 @@ CREATE TRIGGER update_allergens_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Create profile history table
-CREATE TABLE profile_history (
+CREATE TABLE IF NOT EXISTS profile_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -157,7 +157,7 @@ CREATE TRIGGER update_recipes_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Create recipe favorites table
-CREATE TABLE recipe_favorites (
+CREATE TABLE IF NOT EXISTS recipe_favorites (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
