@@ -9,19 +9,24 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create dietary preference type enum
-CREATE TYPE dietary_preference_type AS ENUM (
-    'vegetarian',
-    'vegan',
-    'pescatarian',
-    'gluten-free',
-    'dairy-free',
-    'nut-free',
-    'soy-free',
-    'egg-free',
-    'shellfish-free',
-    'custom'
-);
+-- Create dietary preference type enum (idempotent)
+-- E2E-FIX-2025-F: Use DO block to create enum type only if it doesn't exist
+DO $$ BEGIN
+    CREATE TYPE dietary_preference_type AS ENUM (
+        'vegetarian',
+        'vegan',
+        'pescatarian',
+        'gluten-free',
+        'dairy-free',
+        'nut-free',
+        'soy-free',
+        'egg-free',
+        'shellfish-free',
+        'custom'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- Create users table
 CREATE TABLE IF NOT EXISTS users (
