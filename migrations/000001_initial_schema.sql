@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL
 );
 
+-- E2E-FIX-2025-F: Make trigger creation idempotent
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
@@ -58,6 +60,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     UNIQUE(user_id)
 );
 
+DROP TRIGGER IF EXISTS update_user_profiles_updated_at ON user_profiles;
 CREATE TRIGGER update_user_profiles_updated_at
     BEFORE UPDATE ON user_profiles
     FOR EACH ROW
@@ -74,6 +77,7 @@ CREATE TABLE IF NOT EXISTS dietary_preferences (
     custom_name VARCHAR(50)
 );
 
+DROP TRIGGER IF EXISTS update_dietary_preferences_updated_at ON dietary_preferences;
 CREATE TRIGGER update_dietary_preferences_updated_at
     BEFORE UPDATE ON dietary_preferences
     FOR EACH ROW
@@ -90,6 +94,7 @@ CREATE TABLE IF NOT EXISTS allergens (
     severity_level INTEGER NOT NULL
 );
 
+DROP TRIGGER IF EXISTS update_allergens_updated_at ON allergens;
 CREATE TRIGGER update_allergens_updated_at
     BEFORE UPDATE ON allergens
     FOR EACH ROW
@@ -112,6 +117,7 @@ CREATE TABLE profile_history (
     goals JSONB
 );
 
+DROP TRIGGER IF EXISTS update_profile_history_updated_at ON profile_history;
 CREATE TRIGGER update_profile_history_updated_at
     BEFORE UPDATE ON profile_history
     FOR EACH ROW
@@ -144,6 +150,7 @@ CREATE TABLE IF NOT EXISTS recipes (
     embedding vector(1536)
 );
 
+DROP TRIGGER IF EXISTS update_recipes_updated_at ON recipes;
 CREATE TRIGGER update_recipes_updated_at
     BEFORE UPDATE ON recipes
     FOR EACH ROW
@@ -160,6 +167,7 @@ CREATE TABLE recipe_favorites (
     UNIQUE(user_id, recipe_id)
 );
 
+DROP TRIGGER IF EXISTS update_recipe_favorites_updated_at ON recipe_favorites;
 CREATE TRIGGER update_recipe_favorites_updated_at
     BEFORE UPDATE ON recipe_favorites
     FOR EACH ROW
