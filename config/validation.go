@@ -93,6 +93,7 @@ func ValidateConfig(cfg *Config) error {
 		}
 		// E2E-FIX-2025-E: Allow empty Redis password in CI since Redis runs without auth in test setup
 		// Redis password is optional in CI environment when Redis is configured without authentication
+		// This prevents CI failures where empty Redis password was being incorrectly rejected
 	} else {
 		// In other environments, sensitive values must come from Docker secrets
 		if cfg.DBPassword == "" {
