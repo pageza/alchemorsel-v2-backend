@@ -15,8 +15,9 @@ CREATE TABLE IF NOT EXISTS feedback (
     admin_notes TEXT
 );
 
--- Create indexes for efficient querying
-CREATE INDEX idx_feedback_user_id ON feedback(user_id);
-CREATE INDEX idx_feedback_type ON feedback(type);
-CREATE INDEX idx_feedback_status ON feedback(status);
-CREATE INDEX idx_feedback_created_at ON feedback(created_at);
+-- Create indexes for efficient querying (idempotent)
+-- E2E-FIX-2025-F: Make indexes idempotent to prevent "relation already exists" errors
+CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_type ON feedback(type);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
