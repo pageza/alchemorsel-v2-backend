@@ -319,6 +319,8 @@ func (s *LLMService) generateRecipeAttempt(query string, dietaryPrefs, allergens
 5. For dairy-free: NO milk, cheese, butter, cream, yogurt, or ANY dairy products
 6. For allergens: NEVER include the specified allergens in ANY form, including traces or derivatives
 7. ALWAYS suggest appropriate substitutes that maintain the recipe's integrity
+8. BE DECISIVE: Choose specific substitute ingredients instead of giving options (e.g., use "seitan" not "seitan or tofu")
+9. ADAPT RECIPE NAMES: Update the recipe name to reflect the actual ingredients used (e.g., "Seitan Noodle Soup" not "Vegan Chicken Noodle Soup")
 
 Please provide your response in JSON format with the following structure:
 {
@@ -345,6 +347,18 @@ Please provide your response in JSON format with the following structure:
     "carbs": 45,
     "fat": 12
 }
+
+NUTRITIONAL CALCULATION REQUIREMENTS:
+- Calculate nutrition values based on the EXACT ingredients and quantities listed
+- Use realistic nutritional values for each ingredient (e.g., 1 cup flour = ~455 calories, 1 cup sugar = ~774 calories)
+- Scale values appropriately for the number of servings
+- Ensure values vary significantly between different recipe types:
+  * Main dishes: 300-800 calories per serving
+  * Desserts: 200-500 calories per serving  
+  * Salads: 50-300 calories per serving
+  * Snacks: 100-300 calories per serving
+- Protein should reflect ingredient sources (meat/fish: 20-30g, legumes: 10-20g, vegetables: 2-8g)
+- Always provide whole numbers for nutrition values (no decimals)
 
 Note: The calories, protein, carbs, and fat fields must be numbers, not strings.
 The category field MUST be one of the listed categories above.
@@ -393,7 +407,7 @@ REMEMBER: User safety depends on you following dietary restrictions EXACTLY!`,
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
@@ -546,7 +560,7 @@ func (s *LLMService) CalculateMacros(ingredients []string) (*Macros, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, readErr := io.ReadAll(resp.Body)
@@ -655,7 +669,7 @@ Please provide each recipe as a separate JSON object in an array.`,
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)

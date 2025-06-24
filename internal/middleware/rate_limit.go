@@ -170,20 +170,20 @@ func (rl *RateLimiter) GetRemainingRequests(ctx context.Context, userID string) 
 	return remaining, resetTime, nil
 }
 
-// RecipeCreationRateLimiter creates a rate limiter for recipe creation (5 per hour for development)
+// RecipeCreationRateLimiter creates a rate limiter for recipe creation (10 per hour for development)
 func NewRecipeCreationRateLimiter(redisClient *redis.Client) *RateLimiter {
 	return NewRateLimiter(redisClient, RateLimitConfig{
 		Window:    time.Hour,
-		Limit:     5,
+		Limit:     10,
 		KeyPrefix: "rate_limit:recipe_creation",
 	})
 }
 
-// RecipeModificationRateLimiter creates a rate limiter for recipe modifications (10 per recipe per hour)
+// RecipeModificationRateLimiter creates a rate limiter for recipe modifications (100 per day for development)
 func NewRecipeModificationRateLimiter(redisClient *redis.Client) *RateLimiter {
 	return NewRateLimiter(redisClient, RateLimitConfig{
-		Window:    time.Hour,
-		Limit:     10,
+		Window:    24 * time.Hour,
+		Limit:     100,
 		KeyPrefix: "rate_limit:recipe_modification",
 	})
 }
