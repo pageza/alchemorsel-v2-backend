@@ -34,7 +34,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 			WaitingFor: wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
 				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
-			).WithDeadline(120 * time.Second),
+			).WithStartupTimeout(120 * time.Second), //nolint:staticcheck // testcontainers API limitation
 		},
 		Started: true,
 	})
