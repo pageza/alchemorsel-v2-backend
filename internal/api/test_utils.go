@@ -239,8 +239,9 @@ func SetupTestRouter(t *testing.T) *gin.Engine {
 	emailService := service.NewEmailService()
 	authHandler := NewAuthHandler(testDB.AuthService, emailService, testDB.DB)
 	recipeHandler := NewRecipeHandler(service.NewRecipeService(testDB.DB, nil), testDB.AuthService, nil, nil, testDB.DB)
-	// Use a mock LLM handler instead of the real one
-	llmHandler := NewMockLLMHandler()
+	// Create mock LLM service and handler for testing
+	mockLLMService := NewMockLLMService()
+	llmHandler := NewLLMHandler(testDB.DB, testDB.AuthService, mockLLMService, nil)
 
 	// Create router
 	router := gin.New()
@@ -357,13 +358,28 @@ func (m *MockLLMService) GenerateRecipesBatch(prompts []string) ([]string, error
 
 // Multi-call recipe generation methods
 func (m *MockLLMService) GenerateBasicRecipe(ctx context.Context, query string, dietaryPrefs []string, allergens []string, userID string) (*service.RecipeDraft, error) {
+	// Generate a recipe that respects dietary preferences for testing
+	name := "Test Basic Recipe"
+	ingredients := []string{"1 cup flour", "2 eggs"}
+	
+	// If vegan preference is present, return vegan recipe for test compatibility
+	if len(dietaryPrefs) > 0 {
+		for _, pref := range dietaryPrefs {
+			if pref == "vegan" {
+				name = "Vegan Chickpea Curry"
+				ingredients = []string{"chickpeas", "coconut milk", "curry spices", "vegetables"}
+				break
+			}
+		}
+	}
+	
 	draft := &service.RecipeDraft{
 		ID:          "test-basic-draft-id",
-		Name:        "Test Basic Recipe",
+		Name:        name,
 		Description: "A test basic recipe",
 		Category:    "Main Course",
 		Cuisine:     "American",
-		Ingredients: []string{"1 cup flour", "2 eggs"},
+		Ingredients: ingredients,
 		Instructions: []string{"Mix ingredients", "Cook"},
 		PrepTime:    "15 minutes",
 		CookTime:    "30 minutes",
@@ -419,9 +435,3 @@ func (m *MockLLMService) FinalizeRecipe(ctx context.Context, draftID string) (*s
 	return nil, fmt.Errorf("draft not found")
 }
 
-// NewMockLLMHandler creates a mock LLM handler for testing
-func NewMockLLMHandler() *LLMHandler {
-	return &LLMHandler{
-		// Mock implementation or nil if not needed for tests
-	}
-}
