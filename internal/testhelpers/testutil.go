@@ -281,11 +281,11 @@ func SetupTestDB(t *testing.T) *TestDatabase {
 						port.Port(),
 						cfg.DBName,
 						cfg.DBSSLMode)
-				}).WithStartupTimeout(30*time.Second),
+				}).WithDeadline(30*time.Second),
 				wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser, "-d", cfg.DBName}).
-					WithStartupTimeout(10*time.Second).
+					WithDeadline(10*time.Second).
 					WithPollInterval(2*time.Second),
-			).WithStartupTimeout(60 * time.Second),
+			).WithDeadline(60 * time.Second),
 		},
 		Started: true,
 	})

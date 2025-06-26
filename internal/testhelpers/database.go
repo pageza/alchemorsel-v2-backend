@@ -112,7 +112,7 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 						cfg.DBSSLMode)
 				}),
 				wait.ForExec([]string{"pg_isready", "-U", cfg.DBUser}),
-			).WithStartupTimeout(120 * time.Second),
+			).WithDeadline(120 * time.Second),
 		},
 		Started: true,
 	})
