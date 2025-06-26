@@ -61,11 +61,61 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID uuid.UUID, re
 		profile.PrivacyLevel = *req.PrivacyLevel
 	}
 
+	// Handle dietary preferences and allergens
+	if req.Preferences != nil {
+		if err := s.updateUserPreferences(ctx, userID, req.Preferences); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.db.Save(&profile).Error; err != nil {
 		return nil, err
 	}
 
 	return &profile, nil
+}
+
+// updateUserPreferences updates user's dietary preferences and allergens
+func (s *ProfileService) updateUserPreferences(ctx context.Context, userID uuid.UUID, prefs *types.UserPreferences) error {
+	// Handle dietary preferences
+	if prefs.DietaryPrefs != nil {
+		// Delete existing dietary preferences
+		if err := s.db.Where("user_id = ?", userID).Delete(&models.DietaryPreference{}).Error; err != nil {
+			return err
+		}
+
+		// Add new dietary preferences
+		for _, pref := range prefs.DietaryPrefs {
+			dietary := &models.DietaryPreference{
+				UserID:         userID,
+				PreferenceType: pref,
+			}
+			if err := s.db.Create(dietary).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	// Handle allergens
+	if prefs.Allergies != nil {
+		// Delete existing allergens
+		if err := s.db.Where("user_id = ?", userID).Delete(&models.Allergen{}).Error; err != nil {
+			return err
+		}
+
+		// Add new allergens
+		for _, allergen := range prefs.Allergies {
+			allergenRecord := &models.Allergen{
+				UserID:       userID,
+				AllergenName: allergen,
+			}
+			if err := s.db.Create(allergenRecord).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // Logout handles user logout
