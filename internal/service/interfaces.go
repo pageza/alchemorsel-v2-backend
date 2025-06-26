@@ -9,6 +9,7 @@ import (
 )
 
 type LLMServiceInterface interface {
+	// Legacy methods (maintain backward compatibility)
 	GenerateRecipe(query string, dietaryPrefs []string, allergens []string, draft *RecipeDraft) (string, error)
 	SaveDraft(ctx context.Context, draft *RecipeDraft) error
 	GetDraft(ctx context.Context, draftID string) (*RecipeDraft, error)
@@ -16,6 +17,11 @@ type LLMServiceInterface interface {
 	DeleteDraft(ctx context.Context, id string) error
 	CalculateMacros(ingredients []string) (*Macros, error)
 	GenerateRecipesBatch(prompts []string) ([]string, error)
+	
+	// Multi-call recipe generation methods
+	GenerateBasicRecipe(ctx context.Context, query string, dietaryPrefs []string, allergens []string, userID string) (*RecipeDraft, error)
+	CalculateRecipeNutrition(ctx context.Context, draftID string) (*Macros, error)
+	FinalizeRecipe(ctx context.Context, draftID string) (*RecipeDraft, error)
 }
 
 // IAuthService defines the interface for authentication operations

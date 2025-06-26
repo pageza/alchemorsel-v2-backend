@@ -17,6 +17,7 @@ import (
 	"github.com/pageza/alchemorsel-v2/backend/internal/models"
 	"github.com/pageza/alchemorsel-v2/backend/internal/service"
 	"github.com/pageza/alchemorsel-v2/backend/internal/types"
+	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/mock"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -328,6 +329,70 @@ func (m *MockLLMService) CalculateMacros(ingredients []string) (*service.Macros,
 
 func (m *MockLLMService) GenerateRecipesBatch(prompts []string) ([]string, error) {
 	return []string{`{"name":"Test Recipe","description":"Desc","category":"Cat","ingredients":["i1"],"instructions":["s1"],"calories":100,"protein":10,"carbs":20,"fat":5}`}, nil
+}
+
+// Multi-call recipe generation methods
+func (m *MockLLMService) GenerateBasicRecipe(ctx context.Context, query string, dietaryPrefs []string, allergens []string, userID string) (*service.RecipeDraft, error) {
+	draft := &service.RecipeDraft{
+		ID:          "test-basic-draft-id",
+		Name:        "Test Basic Recipe",
+		Description: "A test basic recipe",
+		Category:    "Main Course",
+		Cuisine:     "American",
+		Ingredients: []string{"1 cup flour", "2 eggs"},
+		Instructions: []string{"Mix ingredients", "Cook"},
+		PrepTime:    "15 minutes",
+		CookTime:    "30 minutes",
+		Servings:    service.ServingsType{Value: "4"},
+		Difficulty:  "Easy",
+		UserID:      userID,
+		Calories:    0, // Basic recipe doesn't have nutrition
+		Protein:     0,
+		Carbs:       0,
+		Fat:         0,
+	}
+	
+	// Save the draft
+	m.drafts[draft.ID] = draft
+	return draft, nil
+}
+
+func (m *MockLLMService) CalculateRecipeNutrition(ctx context.Context, draftID string) (*service.Macros, error) {
+	// Simulate nutrition calculation
+	macros := &service.Macros{
+		Calories: 350,
+		Protein:  15,
+		Carbs:    45,
+		Fat:      12,
+	}
+	
+	// Update the draft with nutrition data
+	if draft, exists := m.drafts[draftID]; exists {
+		draft.Calories = macros.Calories
+		draft.Protein = macros.Protein
+		draft.Carbs = macros.Carbs
+		draft.Fat = macros.Fat
+	}
+	
+	return macros, nil
+}
+
+func (m *MockLLMService) FinalizeRecipe(ctx context.Context, draftID string) (*service.RecipeDraft, error) {
+	if draft, exists := m.drafts[draftID]; exists {
+		// Simulate embedding generation during finalization
+		if draft.Embedding.Slice() == nil || len(draft.Embedding.Slice()) == 0 {
+			// Create a mock embedding (1536 dimensions like OpenAI's ada-002)
+			mockEmbedding := make([]float32, 1536)
+			for i := range mockEmbedding {
+				mockEmbedding[i] = 0.1 // Simple mock values
+			}
+			draft.Embedding = pgvector.NewVector(mockEmbedding)
+		}
+		
+		// Return the finalized draft with embedding
+		return draft, nil
+	}
+	return nil, fmt.Errorf("draft not found")
 }
 
 // NewMockLLMHandler creates a mock LLM handler for testing

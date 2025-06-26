@@ -75,8 +75,14 @@ func (h *LLMHandler) RegisterRoutes(router *gin.RouterGroup) {
 	llm := router.Group("/llm")
 	llm.Use(middleware.AuthMiddleware(h.authService))
 	{
-		// Recipe generation requires email verification
+		// Legacy recipe generation (maintains backward compatibility)
 		llm.POST("/query", middleware.RequireEmailVerification(h.db), h.Query)
+		
+		// Multi-call recipe generation endpoints
+		llm.POST("/generate-basic", middleware.RequireEmailVerification(h.db), h.GenerateBasicRecipe)
+		llm.POST("/calculate-nutrition", middleware.RequireEmailVerification(h.db), h.CalculateNutrition)
+		llm.POST("/finalize-recipe", middleware.RequireEmailVerification(h.db), h.FinalizeRecipe)
+		
 		// Draft operations don't require verification (user can view their drafts before verifying)
 		llm.GET("/drafts/:id", h.GetDraft)
 		llm.DELETE("/drafts/:id", h.DeleteDraft)
@@ -89,6 +95,45 @@ type QueryRequest struct {
 	Intent   string `json:"intent" binding:"required"`
 	DraftID  string `json:"draft_id,omitempty"`
 	RecipeID string `json:"recipe_id,omitempty"`
+}
+
+// BasicRecipeRequest represents a request for basic recipe generation
+type BasicRecipeRequest struct {
+	Query string `json:"query" binding:"required"`
+}
+
+// NutritionRequest represents a request for nutrition calculation
+type NutritionRequest struct {
+	DraftID string `json:"draft_id" binding:"required"`
+}
+
+// FinalizeRequest represents a request to finalize a recipe
+type FinalizeRequest struct {
+	DraftID string `json:"draft_id" binding:"required"`
+}
+
+// BasicRecipeResponse represents the response for basic recipe generation
+type BasicRecipeResponse struct {
+	DraftID string              `json:"draft_id"`
+	Recipe  *service.BasicRecipe `json:"recipe"`
+	Status  string              `json:"status"`
+}
+
+// NutritionResponse represents the response for nutrition calculation
+type NutritionResponse struct {
+	DraftID   string  `json:"draft_id"`
+	Calories  float64 `json:"calories"`
+	Protein   float64 `json:"protein"`
+	Carbs     float64 `json:"carbs"`
+	Fat       float64 `json:"fat"`
+	Status    string  `json:"status"`
+}
+
+// FinalizeResponse represents the response for recipe finalization
+type FinalizeResponse struct {
+	DraftID string                `json:"draft_id"`
+	Recipe  *service.RecipeDraft  `json:"recipe"`
+	Status  string                `json:"status"`
 }
 
 // Query handles recipe generation and modification requests
@@ -236,6 +281,26 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			return
 		}
 
+		// Calculate nutrition for the forked recipe using USDA data
+		fmt.Printf("[LLMHandler] Calculating nutrition for forked recipe with draft ID: %s\n", newRecipe.ID)
+		_, err = h.llmService.CalculateRecipeNutrition(c.Request.Context(), newRecipe.ID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error calculating nutrition for forked recipe: %v\n", err)
+			// Don't fail the fork - nutrition calculation is enhancement
+		} else {
+			fmt.Printf("[LLMHandler] Successfully calculated nutrition for forked recipe\n")
+		}
+
+		// Fetch the updated draft with nutrition data
+		updatedFork, err := h.llmService.GetDraft(c.Request.Context(), newRecipe.ID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error fetching updated fork with nutrition: %v\n", err)
+			// Use original recipe if fetch fails
+			updatedFork = &newRecipe
+		} else {
+			fmt.Printf("[LLMHandler] Successfully fetched updated fork with nutrition data\n")
+		}
+
 		// Only increment rate limit counter on successful fork generation and save
 		if h.creationLimiter != nil {
 			if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
@@ -245,10 +310,10 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			}
 		}
 
-		fmt.Printf("[LLMHandler] Successfully forked recipe. New Draft ID: %s\n", newRecipe.ID)
+		fmt.Printf("[LLMHandler] Successfully forked recipe. New Draft ID: %s\n", updatedFork.ID)
 		c.JSON(http.StatusOK, gin.H{
-			"recipe":   newRecipe,
-			"draft_id": newRecipe.ID,
+			"recipe":   updatedFork,
+			"draft_id": updatedFork.ID,
 		})
 		fmt.Println("[LLMHandler] Responded 200 OK with forked recipe and draft_id.")
 
@@ -272,34 +337,28 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			}
 		}
 
-		recipeJSON, err := h.llmService.GenerateRecipe(req.Query, dietaryPrefs, allergens, nil)
+		// Use new multi-call approach internally for backward compatibility
+		// Step 1: Generate basic recipe
+		draft, err := h.llmService.GenerateBasicRecipe(c.Request.Context(), req.Query, dietaryPrefs, allergens, userID.String())
 		if err != nil {
-			fmt.Printf("[LLMHandler] Error generating recipe: %v\n", err)
-			// Don't increment rate limit counter on generation failure
+			fmt.Printf("[LLMHandler] Error generating basic recipe: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		fmt.Printf("[LLMHandler] Recipe JSON length: %d\n", len(recipeJSON))
-		fmt.Printf("[LLMHandler] Recipe JSON: %s\n", recipeJSON)
 
-		var recipe service.RecipeDraft
-		if err := json.Unmarshal([]byte(recipeJSON), &recipe); err != nil {
-			fmt.Printf("[LLMHandler] Failed to parse recipe JSON: %v\n", err)
-			previewLen := 200
-			if len(recipeJSON) < previewLen {
-				previewLen = len(recipeJSON)
-			}
-			fmt.Printf("[LLMHandler] JSON content preview: %s...\n", recipeJSON[:previewLen])
-			// Don't increment rate limit counter on parsing failure
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse recipe"})
-			return
+		// Step 2: Calculate nutrition
+		_, err = h.llmService.CalculateRecipeNutrition(c.Request.Context(), draft.ID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error calculating nutrition: %v\n", err)
+			// Continue without nutrition data for backward compatibility
 		}
-		recipe.UserID = userID.String()
-		if err := h.llmService.SaveDraft(c.Request.Context(), &recipe); err != nil {
-			fmt.Printf("[LLMHandler] Error saving draft: %v\n", err)
-			// Don't increment rate limit counter on save failure
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+
+		// Step 3: Finalize recipe
+		recipe, err := h.llmService.FinalizeRecipe(c.Request.Context(), draft.ID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error finalizing recipe: %v\n", err)
+			// Use basic draft if finalization fails
+			recipe = draft
 		}
 
 		// Only increment rate limit counter on successful generation and save
@@ -376,15 +435,41 @@ func (h *LLMHandler) Query(c *gin.Context) {
 		draft.PrepTime = updatedRecipe.PrepTime
 		draft.CookTime = updatedRecipe.CookTime
 		draft.Difficulty = updatedRecipe.Difficulty
-		draft.Calories = updatedRecipe.Calories
-		draft.Protein = updatedRecipe.Protein
-		draft.Carbs = updatedRecipe.Carbs
-		draft.Fat = updatedRecipe.Fat
+		draft.Servings = updatedRecipe.Servings // Important: Update servings for nutrition calculation
+		// Skip nutrition fields - they will be calculated with proper USDA data
+		
 		if err := h.llmService.UpdateDraft(c.Request.Context(), draft); err != nil {
 			fmt.Printf("[LLMHandler] Error updating draft: %v\n", err)
 			// Don't increment rate limit counter on save failure
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Recalculate nutrition based on modified ingredients using USDA data
+		fmt.Printf("[LLMHandler] Recalculating nutrition for modified recipe with draft ID: %s\n", draft.ID)
+		fmt.Printf("[LLMHandler] Draft servings before nutrition calc: %+v\n", draft.Servings)
+		nutritionData, err := h.llmService.CalculateRecipeNutrition(c.Request.Context(), draft.ID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error recalculating nutrition for modified recipe: %v\n", err)
+			// Don't fail the modification - nutrition calculation is enhancement
+			// Continue with the modification but log the issue
+		} else {
+			fmt.Printf("[LLMHandler] Successfully recalculated nutrition for modified recipe\n")
+			fmt.Printf("[LLMHandler] Nutrition data returned: %+v\n", nutritionData)
+		}
+
+		// Fetch the updated draft with nutrition data
+		updatedDraft, err := h.llmService.GetDraft(c.Request.Context(), draft.ID)
+		if err != nil {
+			fmt.Printf("[LLMHandler] Error fetching updated draft with nutrition: %v\n", err)
+			// Use original draft if fetch fails
+			updatedDraft = draft
+		} else {
+			fmt.Printf("[LLMHandler] Successfully fetched updated draft with nutrition data\n")
+			fmt.Printf("[LLMHandler] Updated draft nutrition - Calories: %f, Protein: %f, Carbs: %f, Fat: %f\n", 
+				updatedDraft.Calories, updatedDraft.Protein, updatedDraft.Carbs, updatedDraft.Fat)
+			fmt.Printf("[LLMHandler] Updated draft per-serving - CaloriesPerServing: %f, ProteinPerServing: %f\n", 
+				updatedDraft.CaloriesPerServing, updatedDraft.ProteinPerServing)
 		}
 
 		// Only increment rate limit counter on successful modification and save
@@ -396,10 +481,10 @@ func (h *LLMHandler) Query(c *gin.Context) {
 			}
 		}
 
-		fmt.Printf("[LLMHandler] Successfully modified and updated draft. Draft ID: %s\n", draft.ID)
+		fmt.Printf("[LLMHandler] Successfully modified and updated draft. Draft ID: %s\n", updatedDraft.ID)
 		c.JSON(http.StatusOK, gin.H{
-			"recipe":   draft,
-			"draft_id": draft.ID,
+			"recipe":   updatedDraft,
+			"draft_id": updatedDraft.ID,
 		})
 		fmt.Println("[LLMHandler] Responded 200 OK with modified recipe and draft_id.")
 	default:
@@ -482,4 +567,190 @@ func (h *LLMHandler) DeleteDraft(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "draft deleted"})
+}
+
+// GenerateBasicRecipe handles basic recipe generation without nutrition data
+func (h *LLMHandler) GenerateBasicRecipe(c *gin.Context) {
+	var req BasicRecipeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Fetch user with dietary preferences and allergens
+	var user models.User
+	err := h.db.Preload("DietaryPrefs").Preload("Allergens").Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user preferences"})
+		return
+	}
+
+	// Extract dietary preferences and allergens into string arrays
+	var dietaryPrefs []string
+	for _, pref := range user.DietaryPrefs {
+		if pref.PreferenceType != "" {
+			dietaryPrefs = append(dietaryPrefs, pref.PreferenceType)
+		} else if pref.CustomName != "" {
+			dietaryPrefs = append(dietaryPrefs, pref.CustomName)
+		}
+	}
+
+	var allergens []string
+	for _, allergen := range user.Allergens {
+		allergens = append(allergens, allergen.AllergenName)
+	}
+
+	// Check rate limiting before attempting generation
+	if h.creationLimiter != nil {
+		allowed, remaining, resetTime, err := h.creationLimiter.CheckOnly(c.Request.Context(), userID.String())
+		if err != nil {
+			// Continue without rate limiting on error
+		} else if !allowed {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":                "rate limit exceeded",
+				"rate_limit_remaining": remaining,
+				"rate_limit_reset":     resetTime.Unix(),
+			})
+			return
+		}
+	}
+
+	// Generate basic recipe without nutrition data
+	draft, err := h.llmService.GenerateBasicRecipe(c.Request.Context(), req.Query, dietaryPrefs, allergens, userID.String())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Only increment rate limit counter on successful generation and save
+	if h.creationLimiter != nil {
+		if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
+			// Log error but don't fail the request
+		}
+	}
+
+	response := BasicRecipeResponse{
+		DraftID: draft.ID,
+		Recipe: &service.BasicRecipe{
+			Name:         draft.Name,
+			Description:  draft.Description,
+			Category:     draft.Category,
+			Cuisine:      draft.Cuisine,
+			Ingredients:  draft.Ingredients,
+			Instructions: draft.Instructions,
+			PrepTime:     draft.PrepTime,
+			CookTime:     draft.CookTime,
+			Servings:     draft.Servings,
+			Difficulty:   draft.Difficulty,
+		},
+		Status: "basic_generated",
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// CalculateNutrition handles nutrition calculation for an existing draft
+func (h *LLMHandler) CalculateNutrition(c *gin.Context) {
+	var req NutritionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Verify draft ownership
+	draft, err := h.llmService.GetDraft(c.Request.Context(), req.DraftID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "draft not found"})
+		return
+	}
+	if draft.UserID != userID.String() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Calculate nutrition for the draft
+	macros, err := h.llmService.CalculateRecipeNutrition(c.Request.Context(), req.DraftID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := NutritionResponse{
+		DraftID:  req.DraftID,
+		Calories: macros.Calories,
+		Protein:  macros.Protein,
+		Carbs:    macros.Carbs,
+		Fat:      macros.Fat,
+		Status:   "nutrition_calculated",
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// FinalizeRecipe handles finalizing a recipe with all data
+func (h *LLMHandler) FinalizeRecipe(c *gin.Context) {
+	var req FinalizeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Verify draft ownership
+	draft, err := h.llmService.GetDraft(c.Request.Context(), req.DraftID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "draft not found"})
+		return
+	}
+	if draft.UserID != userID.String() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Finalize the recipe
+	finalDraft, err := h.llmService.FinalizeRecipe(c.Request.Context(), req.DraftID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := FinalizeResponse{
+		DraftID: req.DraftID,
+		Recipe:  finalDraft,
+		Status:  "finalized",
+	}
+
+	c.JSON(http.StatusOK, response)
 }

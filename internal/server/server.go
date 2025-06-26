@@ -32,13 +32,13 @@ func NewServer(db *gorm.DB, auth *service.AuthService, profile *service.ProfileS
 	router.Use(middleware.CORS())
 
 	// Create services
-	llmService, err := service.NewLLMService()
-	if err != nil {
-		log.Fatalf("Failed to create LLM service: %v", err)
-	}
 	embeddingService, err := service.NewEmbeddingService()
 	if err != nil {
 		log.Fatalf("Failed to create embedding service: %v", err)
+	}
+	llmService, err := service.NewLLMServiceWithEmbedding(embeddingService)
+	if err != nil {
+		log.Fatalf("Failed to create LLM service: %v", err)
 	}
 
 	// Register all routes
