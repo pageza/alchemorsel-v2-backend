@@ -1,0 +1,19 @@
+run:
+  timeout: 5m
+  
+linters-settings:
+  staticcheck:
+    # Ignore deprecation warnings for testcontainers WithStartupTimeout
+    checks: ["all", "-SA1019"]
+
+issues:
+  exclude-rules:
+    # Ignore SA1019 (deprecation warnings) in test files for testcontainers
+    - path: _test\.go
+      linters:
+        - staticcheck
+      text: "SA1019.*WithStartupTimeout"
+    - path: testhelpers/
+      linters:
+        - staticcheck  
+      text: "SA1019.*WithStartupTimeout"
