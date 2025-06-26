@@ -61,6 +61,15 @@ func (m *TestLLMService) GenerateRecipe(query string, dietaryPrefs, allergens []
 	return m.MockLLMService.GenerateRecipe(query, dietaryPrefs, allergens, originalRecipe)
 }
 
+func (m *TestLLMService) GenerateBasicRecipe(ctx context.Context, query string, dietaryPrefs []string, allergens []string, userID string) (*service.RecipeDraft, error) {
+	// Store the dietary preferences and allergens for verification
+	m.lastDietaryPrefs = dietaryPrefs
+	m.lastAllergens = allergens
+	
+	// Call the parent's method but use our stored values for recipe generation
+	return m.MockLLMService.GenerateBasicRecipe(ctx, query, dietaryPrefs, allergens, userID)
+}
+
 func (m *TestLLMService) GetDraft(ctx context.Context, id string) (*service.RecipeDraft, error) {
 	// First check our parent's drafts
 	if draft, err := m.MockLLMService.GetDraft(ctx, id); err == nil {
