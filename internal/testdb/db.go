@@ -32,15 +32,15 @@ func (td *TestDB) Close() error {
 // SetupTestDB creates a new test database instance
 func SetupTestDB(t *testing.T) *TestDB {
 	// Set test environment
-	os.Setenv("ENV", "test")
+	_ = os.Setenv("ENV", "test")
 
 	// Set up environment variables for local testing
-	os.Setenv("POSTGRES_USER", "test")
-	os.Setenv("POSTGRES_PASSWORD", "test")
-	os.Setenv("POSTGRES_DB", "test")
-	os.Setenv("POSTGRES_HOST", "localhost")
-	os.Setenv("POSTGRES_PORT", "5432")
-	os.Setenv("JWT_SECRET", "test-secret")
+	_ = os.Setenv("POSTGRES_USER", "test")
+	_ = os.Setenv("POSTGRES_PASSWORD", "test")
+	_ = os.Setenv("POSTGRES_DB", "test")
+	_ = os.Setenv("POSTGRES_HOST", "localhost")
+	_ = os.Setenv("POSTGRES_PORT", "5432")
+	_ = os.Setenv("JWT_SECRET", "test-secret")
 
 	// Create test container
 	ctx := context.Background()

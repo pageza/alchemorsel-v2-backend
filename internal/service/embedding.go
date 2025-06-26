@@ -90,7 +90,7 @@ func (s *EmbeddingService) GenerateEmbedding(text string) (pgvector.Vector, erro
 	if err != nil {
 		return pgvector.Vector{}, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return pgvector.Vector{}, fmt.Errorf("API request failed with status %d", resp.StatusCode)

@@ -262,7 +262,7 @@ func SetupTestRouter(t *testing.T) *gin.Engine {
 	t.Cleanup(func() {
 		// Force close any remaining connections
 		if sqlDB, err := testDB.DB.DB(); err == nil {
-			sqlDB.Close()
+			_ = sqlDB.Close()
 		}
 	})
 

@@ -30,7 +30,7 @@ func TestEmbeddingGenerationInMultiCall(t *testing.T) {
 		
 		// Check empty embedding detection
 		var embeddingEmpty bool
-		if embeddingSlice := emptyDraft.Embedding.Slice(); embeddingSlice == nil || len(embeddingSlice) == 0 {
+		if embeddingSlice := emptyDraft.Embedding.Slice(); len(embeddingSlice) == 0 {
 			embeddingEmpty = true
 		}
 		assert.True(t, embeddingEmpty, "Empty draft should be detected as having no embedding")
@@ -42,7 +42,7 @@ func TestEmbeddingGenerationInMultiCall(t *testing.T) {
 		}
 		
 		embeddingEmpty = false
-		if embeddingSlice := draftWithEmbedding.Embedding.Slice(); embeddingSlice == nil || len(embeddingSlice) == 0 {
+		if embeddingSlice := draftWithEmbedding.Embedding.Slice(); len(embeddingSlice) == 0 {
 			embeddingEmpty = true
 		}
 		assert.False(t, embeddingEmpty, "Draft with embedding should not be detected as empty")

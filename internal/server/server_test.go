@@ -27,7 +27,7 @@ func TestServer(t *testing.T) {
 
 	// Use the exported SetupTestDatabase from testhelpers package
 	db := testhelpers.SetupTestDatabase(t)
-	defer db.DB().Migrator().DropTable(&models.Recipe{}, &models.User{}, &models.UserProfile{})
+	defer func() { _ = db.DB().Migrator().DropTable(&models.Recipe{}, &models.User{}, &models.UserProfile{}) }()
 
 	// Create services
 	authService := service.NewAuthService(db.DB(), "test-secret")

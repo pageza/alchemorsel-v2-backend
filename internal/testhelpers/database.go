@@ -29,8 +29,8 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 	}
 
 	// Set the secrets directory environment variable
-	os.Setenv("SECRETS_DIR", secretsDir)
-	defer os.Unsetenv("SECRETS_DIR")
+	_ = os.Setenv("SECRETS_DIR", secretsDir)
+	defer func() { _ = os.Unsetenv("SECRETS_DIR") }()
 
 	// Clean up the temporary directory after the test
 	t.Cleanup(func() {
@@ -56,20 +56,20 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 	os.Setenv("TEST_REDIS_URL", "redis://localhost:6379")
 
 	defer func() {
-		os.Unsetenv("CI")
-		os.Unsetenv("SERVER_PORT")
-		os.Unsetenv("SERVER_HOST")
-		os.Unsetenv("DB_HOST")
-		os.Unsetenv("DB_PORT")
-		os.Unsetenv("DB_USER")
-		os.Unsetenv("DB_NAME")
-		os.Unsetenv("DB_SSL_MODE")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("TEST_DB_PASSWORD")
-		os.Unsetenv("TEST_JWT_SECRET")
-		os.Unsetenv("TEST_REDIS_PASSWORD")
-		os.Unsetenv("TEST_REDIS_URL")
+		_ = os.Unsetenv("CI")
+		_ = os.Unsetenv("SERVER_PORT")
+		_ = os.Unsetenv("SERVER_HOST")
+		_ = os.Unsetenv("DB_HOST")
+		_ = os.Unsetenv("DB_PORT")
+		_ = os.Unsetenv("DB_USER")
+		_ = os.Unsetenv("DB_NAME")
+		_ = os.Unsetenv("DB_SSL_MODE")
+		_ = os.Unsetenv("REDIS_HOST")
+		_ = os.Unsetenv("REDIS_PORT")
+		_ = os.Unsetenv("TEST_DB_PASSWORD")
+		_ = os.Unsetenv("TEST_JWT_SECRET")
+		_ = os.Unsetenv("TEST_REDIS_PASSWORD")
+		_ = os.Unsetenv("TEST_REDIS_URL")
 	}()
 
 	// Load configuration
