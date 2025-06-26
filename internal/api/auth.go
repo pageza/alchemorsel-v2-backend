@@ -12,6 +12,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// Context key type to avoid collisions
+type contextKey string
+
+const usernameContextKey contextKey = "username"
+
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
 	authService  service.IAuthService
@@ -55,7 +60,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Create context with username
-	ctx := context.WithValue(c.Request.Context(), "username", req.Username)
+	ctx := context.WithValue(c.Request.Context(), usernameContextKey, req.Username)
 	user, err := h.authService.Register(ctx, req.Email, req.Password, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

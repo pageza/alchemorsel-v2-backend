@@ -643,6 +643,7 @@ func (h *LLMHandler) GenerateBasicRecipe(c *gin.Context) {
 	if h.creationLimiter != nil {
 		if err := h.creationLimiter.IncrementUsage(c.Request.Context(), userID.String()); err != nil {
 			// Log error but don't fail the request
+			fmt.Printf("[LLMHandler] Failed to increment rate limit: %v\n", err)
 		}
 	}
 

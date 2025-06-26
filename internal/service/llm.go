@@ -958,6 +958,7 @@ func parseCustomStructuredFormat(content string) (string, bool) {
 
 
 // fixDeepSeekJSON fixes common JSON formatting issues from DeepSeek API
+// Used by GenerateRecipe and GenerateBasicRecipe methods
 func fixDeepSeekJSON(content string) string {
 	fmt.Printf("[LLMHandler] Fixing DeepSeek JSON formatting issues...\n")
 
