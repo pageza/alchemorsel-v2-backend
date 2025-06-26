@@ -319,7 +319,9 @@ func (m *MockLLMService) GenerateRecipe(query string, dietaryPrefs, allergens []
 }
 
 func (m *MockLLMService) SaveDraft(ctx context.Context, draft *service.RecipeDraft) error {
-	draft.ID = "test-draft-id"
+	if draft.ID == "" {
+		draft.ID = "test-draft-id"
+	}
 	m.drafts[draft.ID] = draft
 	return nil
 }

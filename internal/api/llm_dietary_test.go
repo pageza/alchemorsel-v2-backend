@@ -316,7 +316,10 @@ func TestLLMHandler_ModifyRecipeWithDietaryRestrictions(t *testing.T) {
 		Instructions: []string{"Cook pasta", "Mix eggs and cheese", "Combine"},
 		UserID:       userID.String(),
 	}
-	_ = testLLMService.SaveDraft(context.Background(), draft)
+	err := testLLMService.SaveDraft(context.Background(), draft)
+	if err != nil {
+		t.Fatalf("Failed to save draft: %v", err)
+	}
 	
 	handler := NewLLMHandler(db, nil, testLLMService, nil)
 
