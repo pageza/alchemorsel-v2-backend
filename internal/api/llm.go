@@ -171,12 +171,15 @@ func (h *LLMHandler) Query(c *gin.Context) {
 
 	// Fetch user with dietary preferences and allergens
 	var user models.User
-	err := h.db.Preload("DietaryPrefs").Preload("Allergens").Where("id = ?", userID).First(&user).Error
+	err := h.db.Preload("DietaryPrefs").Where("id = ?", userID).First(&user).Error
 	if err != nil {
 		fmt.Printf("[LLMHandler] Failed to fetch user with dietary preferences: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user preferences"})
 		return
 	}
+	
+	// Try to preload allergens separately to avoid breaking if table doesn't exist
+	_ = h.db.Model(&user).Association("Allergens").Find(&user.Allergens)
 
 	// Extract dietary preferences and allergens into string arrays
 	var dietaryPrefs []string
@@ -590,11 +593,14 @@ func (h *LLMHandler) GenerateBasicRecipe(c *gin.Context) {
 
 	// Fetch user with dietary preferences and allergens
 	var user models.User
-	err := h.db.Preload("DietaryPrefs").Preload("Allergens").Where("id = ?", userID).First(&user).Error
+	err := h.db.Preload("DietaryPrefs").Where("id = ?", userID).First(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user preferences"})
 		return
 	}
+	
+	// Try to preload allergens separately to avoid breaking if table doesn't exist
+	_ = h.db.Model(&user).Association("Allergens").Find(&user.Allergens)
 
 	// Extract dietary preferences and allergens into string arrays
 	var dietaryPrefs []string
