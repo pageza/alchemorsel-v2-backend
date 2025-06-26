@@ -130,12 +130,36 @@ func SetupTestDB(t *testing.T) *TestDB {
 		t.Fatalf("failed to install pgvector extension: %v", err)
 	}
 
+	// Create dietary preference type enum
+	if err := db.Exec(`
+		DO $$ BEGIN
+			CREATE TYPE dietary_preference_type AS ENUM (
+				'vegetarian',
+				'vegan',
+				'pescatarian',
+				'gluten-free',
+				'dairy-free',
+				'nut-free',
+				'soy-free',
+				'egg-free',
+				'shellfish-free',
+				'custom'
+			);
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
+	`).Error; err != nil {
+		t.Fatalf("failed to create dietary preference type: %v", err)
+	}
+
 	// Auto-migrate the schema
 	err = db.AutoMigrate(
 		&models.User{},
 		&models.UserProfile{},
 		&models.Recipe{},
 		&models.RecipeFavorite{},
+		&models.DietaryPreference{},
+		&models.Allergen{},
 	)
 	if err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
