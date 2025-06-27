@@ -26,7 +26,7 @@ type LLMServiceInterface interface {
 
 // IAuthService defines the interface for authentication operations
 type IAuthService interface {
-	Register(ctx context.Context, email, password string, prefs *types.UserPreferences) (*models.User, error)
+	Register(ctx context.Context, email, password, username string, prefs *types.UserPreferences) (*models.User, error)
 	Login(ctx context.Context, email, password string) (*models.User, *models.UserProfile, error)
 	ValidateToken(token string) (*types.TokenClaims, error)
 	GenerateToken(claims *types.TokenClaims) (string, error)

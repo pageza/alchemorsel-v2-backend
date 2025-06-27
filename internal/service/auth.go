@@ -34,25 +34,16 @@ func NewAuthService(db *gorm.DB, secretKey string) *AuthService {
 }
 
 // Register handles user registration
-func (s *AuthService) Register(ctx context.Context, email, password string, preferences *types.UserPreferences) (*models.User, error) {
+func (s *AuthService) Register(ctx context.Context, email, password, username string, preferences *types.UserPreferences) (*models.User, error) {
 	// Check if user already exists
 	var existingUser models.User
 	if err := s.db.Where("email = ?", email).First(&existingUser).Error; err == nil {
 		return nil, errors.New("user already exists")
 	}
 
-	// Determine username
-	username := email
-	if preferences != nil {
-		if len(preferences.DietaryPrefs) > 0 {
-			// If the first dietary pref is actually a username (from test), use it
-			username = preferences.DietaryPrefs[0]
-		}
-	}
-	if ctx != nil {
-		if uname, ok := ctx.Value("username").(string); ok && uname != "" {
-			username = uname
-		}
+	// Use provided username, default to email if empty
+	if username == "" {
+		username = email
 	}
 	fmt.Printf("[DEBUG] Registering user with username: %s\n", username)
 

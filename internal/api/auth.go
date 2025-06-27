@@ -46,24 +46,60 @@ func (h *AuthHandler) RegisterRoutes(router *gin.RouterGroup) {
 	}
 }
 
+// RegisterRequest represents the complete registration request
+type RegisterRequest struct {
+	Username            string   `json:"username" binding:"required"`
+	Email               string   `json:"email" binding:"required,email"`
+	Password            string   `json:"password" binding:"required"`
+	Name                string   `json:"name"`
+	DietaryLifestyles   []string `json:"dietary_lifestyles"`
+	CuisinePreferences  []string `json:"cuisine_preferences"`
+	Allergies           []string `json:"allergies"`
+	DietaryPreferences  []string `json:"dietary_preferences"` // Legacy field support
+}
+
 // Register handles user registration
 func (h *AuthHandler) Register(c *gin.Context) {
-	var req struct {
-		Username string `json:"username" binding:"required"`
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required"`
-	}
+	var req RegisterRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Prepare user preferences from registration request
+	var userPrefs *types.UserPreferences
+	if len(req.DietaryLifestyles) > 0 || len(req.DietaryPreferences) > 0 || len(req.Allergies) > 0 {
+		// Combine all dietary preferences into one list
+		var allDietary []string
+		allDietary = append(allDietary, req.DietaryLifestyles...)
+		allDietary = append(allDietary, req.DietaryPreferences...)
+		
+		userPrefs = &types.UserPreferences{
+			DietaryPrefs:    allDietary,
+			Allergies:       req.Allergies,
+			FavoriteCuisine: "", // Will be set from cuisine preferences if any
+		}
+		
+		// Set favorite cuisine from first cuisine preference if provided
+		if len(req.CuisinePreferences) > 0 {
+			userPrefs.FavoriteCuisine = req.CuisinePreferences[0]
+		}
+	}
+
 	// Create context with username
 	ctx := context.WithValue(c.Request.Context(), usernameContextKey, req.Username)
-	user, err := h.authService.Register(ctx, req.Email, req.Password, nil)
+	user, err := h.authService.Register(ctx, req.Email, req.Password, req.Username, userPrefs)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// Handle specific error cases with appropriate HTTP status codes
+		switch err.Error() {
+		case "user already exists":
+			c.JSON(http.StatusConflict, gin.H{"error": "An account with this email already exists"})
+		case "username already taken":
+			c.JSON(http.StatusConflict, gin.H{"error": "This username is already taken"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Registration failed. Please try again later."})
+		}
 		return
 	}
 
@@ -116,7 +152,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, profile, err := h.authService.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		// Handle specific error cases with appropriate messages
+		switch err.Error() {
+		case "invalid credentials":
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Login failed. Please try again later."})
+		}
 		return
 	}
 
