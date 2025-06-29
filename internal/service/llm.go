@@ -40,6 +40,7 @@ type LLMService struct {
 	apiURL           string
 	redis            *redis.Client
 	embeddingService EmbeddingServiceInterface
+	imageService     IImageService
 }
 
 // NewLLMService creates a new LLMService instance
@@ -49,6 +50,11 @@ func NewLLMService() (*LLMService, error) {
 
 // NewLLMServiceWithEmbedding creates a new LLMService instance with embedding service
 func NewLLMServiceWithEmbedding(embeddingService EmbeddingServiceInterface) (*LLMService, error) {
+	return NewLLMServiceWithServices(embeddingService, nil)
+}
+
+// NewLLMServiceWithServices creates a new LLMService instance with embedding and image services
+func NewLLMServiceWithServices(embeddingService EmbeddingServiceInterface, imageService IImageService) (*LLMService, error) {
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
 	if apiKey == "" {
 		apiKeyFile := os.Getenv("DEEPSEEK_API_KEY_FILE")
@@ -100,6 +106,7 @@ func NewLLMServiceWithEmbedding(embeddingService EmbeddingServiceInterface) (*LL
 		apiURL:           apiURL,
 		redis:            redisClient,
 		embeddingService: embeddingService,
+		imageService:     imageService,
 	}, nil
 }
 
@@ -184,6 +191,7 @@ type RecipeDraft struct {
 	Description  string          `json:"description"`
 	Category     string          `json:"category"`
 	Cuisine      string          `json:"cuisine"`
+	ImageURL     string          `json:"image_url"`
 	Ingredients  []string        `json:"ingredients"`
 	Instructions []string        `json:"instructions"`
 	PrepTime     string          `json:"prep_time"`
@@ -454,11 +462,23 @@ func (s *LLMService) FinalizeRecipe(ctx context.Context, draftID string) (*Recip
 		}
 	}
 
-	// Future enhancements can include:
-	// - Recipe optimization
-	// - Additional validation
-	// - Format standardization
-	// - Image generation preparation
+	// Generate image if image service is available and no image exists
+	if s.imageService != nil && draft.ImageURL == "" {
+		log.Printf("Generating image for recipe %s", draft.ID)
+		imageURL, err := s.imageService.GenerateRecipeImage(ctx, draft)
+		if err != nil {
+			// Log the error but don't fail the finalization
+			log.Printf("Warning: Failed to generate image for recipe %s: %v", draft.ID, err)
+		} else {
+			draft.ImageURL = imageURL
+			draft.UpdatedAt = time.Now()
+			
+			// Save the updated draft with image
+			if err := s.UpdateDraft(ctx, draft); err != nil {
+				log.Printf("Warning: Failed to update draft with image URL: %v", err)
+			}
+		}
+	}
 
 	return draft, nil
 }

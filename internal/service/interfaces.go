@@ -75,3 +75,10 @@ type IEmailService interface {
 	SendVerificationEmail(user *models.User, token string) error
 	SendWelcomeEmail(user *models.User) error
 }
+
+// IImageService defines the interface for image generation operations
+type IImageService interface {
+	GenerateRecipeImage(ctx context.Context, recipeData *RecipeDraft) (string, error)
+	GenerateImageFromPrompt(ctx context.Context, prompt string, size string) (string, error)
+	UploadImageToS3(ctx context.Context, imageData []byte, fileName string) (string, error)
+}

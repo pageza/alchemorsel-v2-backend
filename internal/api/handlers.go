@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/pageza/alchemorsel-v2/backend/config"
@@ -48,13 +49,45 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	emailService := service.NewEmailService()
 	feedbackService := service.NewFeedbackService(db, emailService)
 
+	// Create S3 config and image service
+	s3Config, err := config.NewS3Config(context.Background())
+	if err != nil {
+		log.Printf("Warning: Failed to initialize S3 config: %v", err)
+		s3Config = nil
+	}
+	
+	var imageService service.IImageService
+	if s3Config != nil {
+		imageService, err = service.NewImageService(s3Config)
+		if err != nil {
+			log.Printf("Warning: Failed to create image service: %v", err)
+			imageService = nil
+		}
+	}
+
 	// Create handlers
 	authHandler := NewAuthHandler(authService, emailService, db)
 	recipeHandler := NewRecipeHandlerWithRateLimit(service.NewRecipeService(db, embeddingService), authService, llmService, embeddingService, db, recipeCreationLimiter, recipeModificationLimiter)
+	// Update LLM service with image service if available
+	if imageService != nil {
+		llmServiceWithImage, err := service.NewLLMServiceWithServices(embeddingService, imageService)
+		if err != nil {
+			log.Printf("Warning: Failed to create LLM service with image service: %v", err)
+		} else {
+			llmService = llmServiceWithImage
+		}
+	}
+	
 	llmHandler := NewLLMHandlerWithRateLimit(db, authService.(*service.AuthService), llmService, service.NewRecipeService(db, embeddingService), recipeCreationLimiter)
 	profileHandler := NewProfileHandler(service.NewProfileService(db), authService)
 	dashboardHandler := NewDashboardHandler(db, authService)
 	feedbackHandler := NewFeedbackHandler(feedbackService, db)
+	
+	// Create image handler if image service is available
+	var imageHandler *ImageHandler
+	if imageService != nil {
+		imageHandler = NewImageHandler(db, imageService, llmService, authService.(*service.AuthService), recipeCreationLimiter)
+	}
 
 	fmt.Println("DEBUG: Feedback handler created successfully")
 
@@ -64,6 +97,11 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, authService service.IAuthSe
 	recipeHandler.RegisterRoutes(v1)
 	llmHandler.RegisterRoutes(v1)
 	profileHandler.RegisterRoutes(v1)
+	
+	// Register image routes if image handler is available
+	if imageHandler != nil {
+		imageHandler.RegisterRoutes(v1)
+	}
 
 	// Feedback routes (supports both authenticated and anonymous)
 	fmt.Println("DEBUG: Registering feedback routes")
