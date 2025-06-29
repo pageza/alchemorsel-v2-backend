@@ -39,7 +39,7 @@ func setupAuthTest(t *testing.T) (*gin.Engine, *testhelpers.TestDatabase, *servi
 			return
 		}
 
-		user, err := authSvc.Register(c.Request.Context(), req.Email, req.Password, &types.UserPreferences{
+		user, err := authSvc.Register(c.Request.Context(), req.Email, req.Password, req.Username, &types.UserPreferences{
 			DietaryPrefs: req.DietaryPreferences,
 			Allergies:    req.Allergies,
 		})
@@ -221,7 +221,7 @@ func TestLogin(t *testing.T) {
 
 	// Register a user first
 	// LINT-FIX-2025: Use context.TODO() instead of nil context for better error handling
-	user, err := authSvc.Register(context.TODO(), "t3@example.com", "password123", &types.UserPreferences{
+	user, err := authSvc.Register(context.TODO(), "t3@example.com", "password123", "t3user", &types.UserPreferences{
 		DietaryPrefs: []string{"vegetarian"},
 		Allergies:    []string{},
 	})
@@ -274,7 +274,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 
 	// Register a user first
 	// LINT-FIX-2025: Use context.TODO() instead of nil context for better error handling
-	_, err := authSvc.Register(context.TODO(), "t4@example.com", "password123", &types.UserPreferences{
+	_, err := authSvc.Register(context.TODO(), "t4@example.com", "password123", "t4user", &types.UserPreferences{
 		DietaryPrefs: []string{"vegetarian"},
 		Allergies:    []string{},
 	})

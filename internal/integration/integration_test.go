@@ -139,7 +139,7 @@ func setupTestRouter(authService *mocks.MockAuthService, profileService *mocks.M
 				return
 			}
 
-			user, err := authService.Register(c.Request.Context(), req.Email, req.Password, nil)
+			user, err := authService.Register(c.Request.Context(), req.Email, req.Password, req.Username, nil)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return

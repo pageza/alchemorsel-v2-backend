@@ -23,8 +23,8 @@ func (m *MockAuthService) ValidateToken(token string) (*types.TokenClaims, error
 	return args.Get(0).(*types.TokenClaims), args.Error(1)
 }
 
-func (m *MockAuthService) Register(ctx context.Context, email, password string, preferences *types.UserPreferences) (*models.User, error) {
-	args := m.Called(ctx, email, password, preferences)
+func (m *MockAuthService) Register(ctx context.Context, email, password, username string, preferences *types.UserPreferences) (*models.User, error) {
+	args := m.Called(ctx, email, password, username, preferences)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
