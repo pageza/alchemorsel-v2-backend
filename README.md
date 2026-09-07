@@ -1,19 +1,25 @@
-# Backend Application
+# AlcheMorsel v2 Backend
 
-This is the backend application built with Go.
+
+Go API for AlcheMorsel, a functioning but incomplete AI-powered recipe application. The backend provides authentication, recipe workflows, relational and vector-backed persistence, external AI-service integration, API documentation, and automated tests.
+
 
 ## Prerequisites
+
 
 - Go 1.21 or higher
 - PostgreSQL 15 or higher
 - Redis 7 or higher
 
+
 ## Getting Started
+
 
 1. Install dependencies:
 ```bash
 go mod download
 ```
+
 
 2. Set up environment variables:
 Create a `.env` file in the root directory with the following variables:
@@ -34,18 +40,23 @@ AWS_REGION=us-east-1
 S3_BUCKET_NAME=alchemorsel-profile-pictures
 ```
 
+
 3. Run the application:
 ```bash
 go run ./cmd/api
 ```
 
+
 ## Development
+
 
 - The server runs on `http://localhost:8080` by default
 - Hot reload is enabled using `air` (optional)
 - API documentation is available at `/swagger` when running in development mode
 
+
 ## Project Structure
+
 
 ```
 backend/
@@ -58,86 +69,3 @@ backend/
 │   ├── middleware/  # HTTP middleware
 │   ├── model/       # Recipe models
 │   ├── models/      # User and profile models
-│   ├── server/      # Server setup
-│   └── service/     # Business logic
-├── migrations/      # Database migrations
-└── scripts/         # Utility scripts
-```
-
-## Available Commands
-
-- `go run ./cmd/api` - Run the application
-- `go test ./...` - Run all tests
-- `go mod tidy` - Clean up dependencies
-- `go fmt ./...` - Format code
-- `go vet ./...` - Check for common errors
-
-## API Documentation
-
-The API documentation is generated using Swagger/OpenAPI. A machine readable
-specification is located at `api/docs/openapi.yaml`.
-
-To view the interactive documentation:
-
-1. Start the server
-2. Visit `http://localhost:8080/swagger`
-
-### Auth Endpoints
-
-`POST /api/v1/auth/register` registers a new user. Example payload:
-
-```json
-{
-  "name": "Jane Doe",
-  "email": "jane@example.com",
-  "password": "strongpassword",
-  "username": "janedoe",
-  "dietary_preferences": ["vegan"],
-  "allergies": ["peanuts"]
-}
-```
-
-At least one of `dietary_preferences` or `allergies` must be provided. The response returns a `token` field.
-
-`POST /api/v1/auth/login` accepts:
-
-```json
-{
-  "email": "jane@example.com",
-  "password": "strongpassword"
-}
-```
-
-It also returns a JWT token on success.
-
-### Recipes Endpoint
-
--`GET /api/v1/recipes` supports optional query parameters:
-
-- `q` - search term. When running with Postgres, this uses pgvector to order results by embedding similarity.
-- `category` - filter by category
-- `dietary` - comma-separated dietary preferences to match recipe categories
-- `exclude` - comma-separated allergens or ingredients to omit
-- `POST /api/v1/recipes/:id/favorite` - add a recipe to the authenticated user's favorites
-- `DELETE /api/v1/recipes/:id/favorite` - remove a recipe from the authenticated user's favorites
-
-Favorites are stored in the `recipe_favorites` table created by the database migrations.
-
-### LLM Endpoint
-
-`POST /api/v1/llm/query` generates a recipe using the language model. This route
-requires a valid `Authorization` header with a bearer token. The response
-includes the persisted recipe with the authenticated user ID attached.
-The generated recipe respects the user's saved dietary preferences and
-allergens.
-
-## Contributing
-
-1. Create a new branch for your feature
-2. Make your changes
-3. Run tests: `go test ./...`
-4. Submit a pull request
-
-## License
-
-MIT 
